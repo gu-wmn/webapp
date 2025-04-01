@@ -15,9 +15,9 @@ Corpora currently used:
 * [Winning Arguments (ChangeMyView) Corpus](https://convokit.cornell.edu/documentation/winning.html) - (License Unknown)
 * [Switchboard Dialog Act Corpus](http://compprag.christopherpotts.net/swda.html) - [License: CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/)
 
-## Running this web app
-
 Currently the size of the corpora will take up about 6GB of space.
+
+## Running this web app
 
 First:
 ```
