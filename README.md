@@ -4,7 +4,7 @@
 
 This is a web application for the research project [Not Just Semantics](https://dev.clasp.gu.se/word-negotiation/about).
 It applies and displays standoff annotation with a series of corpora.
-The standoff annotation can be found at [./src/not_just_semantics/wmn_annotation.json](https://github.com/gu-wmn/webapp/src/not_just_semantics/wmn_annotation.json),
+The standoff annotation can be found at [./src/not_just_semantics/wmn_annotation.json](https://github.com/gu-wmn/webapp/blob/main/src/not_just_semantics/wmn_annotations.json),
 while the corpora will be downloaded at first run and a portion of the corpus text will be extracted into a local json file.
 
 ### Corpora
