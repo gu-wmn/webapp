@@ -1,0 +1,3 @@
+include src/not_just_semantics/templates/*.html
+include src/not_just_semantics/static/*.css
+include src/not_just_semantics/wmn_annotations.json

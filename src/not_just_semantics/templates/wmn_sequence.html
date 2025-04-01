@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% set page_name = "WMN sequence: " ~ "ID" %}
+{% block title %}{{ page_name }}{% endblock %}
+
+{% block content %}
+{% if "sequence" in page_name %}
+<div id="sequence-sidebar">
+    <h3 style="margin: 0 0px; margin-bottom: 10px;">Labels</h3>
+    {% for label in labels %}
+        {% if label["name"] != "Trigger reference" %}
+            {% set className = label["name"] %}
+            <button class="{{className}}" onclick='gotoText({{ label }})'>{{ label.name }}</button>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<div id="sequence-content">
+    <b>WMN:</b> {{wmn_sequence.wmn.value}}<br>
+    <b>WMN Meaning:</b> {{wmn_sequence.wmn_meaning.value}}<br>
+    <b>Context</b> {{wmn_sequence.context.value}}<br>
+    <b>Corpus:</b>
+    <a href="{{wmn_sequence.corpus_url}}" target="_blank">
+        {{wmn_sequence.corpus_fullname}}
+    </a><br>
+    <b>License:</b>
+    <a href="{{wmn_sequence.corpus_license_url}}" target="_blank">
+        {{wmn_sequence.corpus_license_url}}
+    </a>
+
+    <h2>Dialogue</h2>
+
+    {% set index = namespace(value=0)%}
+    {% for utt in wmn_sequence.utterances %}
+        <div class="utterance">
+            <b>[{{utt.author}}]</b>
+            <p id="index-{{index.value}}" data-text="{{ utt.text }}">
+                {{ utt.text | safe }}
+            </p>
+        </div>
+        {% set index.value = index.value + 1 %}
+    {% endfor %}
+</div>
+
+<script>
+    function highlightText(element, startOffset, endOffset, className) {
+        let textContent = element.dataset.text; // Use exact data-text
+        let before = textContent.slice(0, startOffset);
+        let highlight = textContent.slice(startOffset, endOffset);
+        let after = textContent.slice(endOffset);
+
+        element.innerHTML = before + `<span class="${className}">${highlight}</span>` + after;
+    }
+
+
+    function gotoText(label) {
+        console.log("Label clicked:", label);
+
+        // Remove previous highlights
+        document.querySelectorAll(".utterance span").forEach(span => {
+            span.replaceWith(span.textContent); // Remove previous highlights
+        });
+
+        // Apply the highlighting across utterances
+        for (let i = label.start_index; i <= label.end_index; i++) {
+            let element = document.getElementById(`index-${i}`);
+            if (!element) continue;
+
+            // Handle the start index
+            if (i === label.start_index && i === label.end_index) {
+                // If the start and end are in the same utterance
+                highlightText(element, label.start_offset, label.end_offset, label.name);
+            } else if (i === label.start_index) {
+                // If it's the start utterance, highlight the portion from start_offset onwards
+                let textContent = element.textContent;
+                let before = textContent.slice(0, label.start_offset);
+                let highlight = textContent.slice(label.start_offset);
+                element.innerHTML = before + `<span class="${label.name}">${highlight}</span>`;
+            } else if (i === label.end_index) {
+                // If it's the end utterance, highlight from the beginning to end_offset
+                let textContent = element.textContent;
+                let highlight = textContent.slice(0, label.end_offset);
+                let after = textContent.slice(label.end_offset);
+                element.innerHTML = `<span class="${label.name}">${highlight}</span>` + after;
+            } else {
+                // For all utterances between the start and end, highlight everything
+                element.innerHTML = `<span class="${label.name}">${element.innerHTML}</span>`;
+            }
+        }
+
+        // Scroll to the first highlighted utterance
+        let firstUtterance = document.getElementById(`index-${label.start_index}`);
+        if (firstUtterance) {
+            firstUtterance.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }
+</script>
+{% endblock %}

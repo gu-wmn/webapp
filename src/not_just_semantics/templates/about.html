@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+{% set active_page = "about" %}
+{% set page_name = "About" %}
+{% block title %}{{ page_name }}{% endblock %}
+{% block content %}
+
+<h1>Not Just Semantics</h1>
+
+<p>We are a research group investigating how people negotiate word meanings in interaction—both in
+spoken conversations and in online interaction, such as social media discussions.
+Our research is grounded in a dialogical perspective on language and communication,
+emphasizing that meaning is dynamically shaped through interaction,
+where participants collaboratively construct and challenge meanings in context.</p>
+
+<h2>What is Word Meaning Negotiation?</h2>
+
+<p>Word meaning negotiation (WMN) occurs when participants in a conversation temporarily shift focus from
+the ongoing topic to discuss the meaning of a word. This can happen in casual conversations,
+online debates, or formal discussions such as media interviews or political debates.</p>
+
+<p>A negotiation often begins with a meta-linguistic clarification request (“What do you mean by X?”)
+or a meta-linguistic objection to a word choice or its implied meaning (“That is not (the meaning of) X!”).
+Participants then engage in negotiation using strategies such as defining the word, giving examples,
+contrasting it with alternatives, or appealing to external sources (e.g., dictionaries).
+By studying these interactions, we aim to understand how meaning is established in conversation,
+how shared understandings emerge, and why negotiating meaning is a fundamental part of interaction.</p>
+
+<h2>Our Research Objectives</h2>
+
+<p>Our project, funded by the Swedish Research Council (Vetenskapsrådet), seeks to map and analyze
+the mechanisms behind word meaning negotiation. We are developing an extensive corpus of WMN sequences.
+This currently includes spoken dialogue data from the British National Corpus (BNC) and online
+interactional data from Reddit, and will continue to expand with Swedish interactional data from the
+discussion forums Familjeliv and Flashback. Our research focuses on:
+<ul>
+    <li>How WMNs are initiated - what triggers them, and in what types of conversations they arise.</li>
+    <li>The conversational strategies people use - definitions, examples, contrasts, etc.</li>
+    <li>What type of meaning the negotiations focus on. We distinguish between meaning potential
+        (a word’s range of possible aspects of meaning based on its semantic properties)
+        and situated meaning (how a word is used in a specific interaction).</li>
+    <li>How word meanings shift over time and whether we can trace these changes systematically.</li>
+    <li>Developing methods for the automatic identification and analysis of WMN in interactional data,
+        combining corpus linguistics and AI-based techniques.</li>
+</ul>
+
+<h2>Interdisciplinary and Societal Impact</h2>
+
+<p>Our work combines linguistics, computational methods, and interaction analysis, making it relevant to
+fields such as communication studies, artificial intelligence, and language technology.
+By examining authentic interactions, we identify the mechanisms and strategies people use to negotiate
+word meanings, uncovering patterns in how meaning is co-constructed and adapted across different contexts.</p>
+
+<p>One of our outreach initiatives is the blog [Inte bara semantik](https://njus.blogg.gu.se),
+where we explore examples of word meaning negotiation in current events, making our research accessible to a broader audience.</p>
+
+<h2>Project Team and Collaborators</h2>
+
+Staffan Larsson, Department of Philosophy, Linguistics, and Theory of Science, University of Gothenburg (PI)<br>
+Jenny Myrendal, Department of Education, Communication, and Learning, University of Gothenburg (Project member)<br>
+William Noble, Department of Philosophy, Linguistics, and Theory of Science, University of Gothenburg<br>
+Kaj Ailomaa, Department of Philosophy, Linguistics, and Theory of Science, University of Gothenburg<br>
+Aina Garí Soler, Inria, Paris<br>
+Chloé Clavel, Inria Paris<br>
+Matthieu Labeau, Télécom Paris<br>
+
+{% endblock %}
