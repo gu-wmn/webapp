@@ -14,7 +14,7 @@ class App():
 
     def __init__(self, data_path: str = "./"):
 
-        self.site_title = "Word Meaning Negotation"
+        self.site_title = "Not Just Semantics"
 
         self.annotation = Annotation(data_path=data_path)
 
