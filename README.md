@@ -11,7 +11,7 @@ while the corpora will be downloaded at first run and a portion of the corpus te
 
 Corpora currently used:
 
-* [British National Corpus](http://www.natcorp.ox.ac.uk/) - [License](http://www.natcorp.ox.ac.uk/docs/licence.html)
+* [British National Corpus](http://www.natcorp.ox.ac.uk/) - [BNC user license](http://www.natcorp.ox.ac.uk/docs/licence.html)
 * [Winning Arguments (ChangeMyView) Corpus](https://convokit.cornell.edu/documentation/winning.html) - (License Unknown)
 * [Switchboard Dialog Act Corpus](http://compprag.christopherpotts.net/swda.html) - [License: CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/)
 
