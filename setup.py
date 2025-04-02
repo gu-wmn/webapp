@@ -4,7 +4,7 @@ setup(
     name='Not just semantics - Web app',
     version='0.1.0',
     description='A web app that applies standoff annotation to corpora',
-    url='https://github.com/GU-CLASP/word-negotation',
+    url='https://github.com/gu-wmn/webapp',
     author='Kaj Ailomaa',
     author_email='kaj.ailomaa@gu.se',
     license='MIT',
