@@ -1,0 +1,52 @@
+{% extends "layout.jinja" %}
+{% set page_name = "WMN sequence: " ~ "ID" %}
+{% block title %}{{page_name}}{% endblock %}
+
+{% block content %}
+
+
+<div id="label-content">
+    <section>
+        <h2 class="top-heading">
+            Label ({{label.labelname.value}}):
+            <span class="{{label.labelname.value}}">
+                {{label.excerpt}}
+            </span>
+            {% if label.count > 1 %}
+            ({{label.count}})
+            {% endif %}
+        </h2>
+
+        <div class="info-line">
+            <b>Found in dialogues:</b>
+            {% for diag_id in label.dialogue_ids %}
+            <a class="no-decorate" href="{{url_for('dialogue_page', dialogue_id=diag_id)}}">
+                <span class="tag diag-id">
+                    {{diag_id}}
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+
+        <div class="info-line">
+            <b>Found in wmn sequences:</b>
+            {% for wmn_id, data in label.sequence_ids.items() %}
+            <div class="tag">
+                <a class="no-decorate" href="{{url_for('sequence_page', dialogue_id=data['dialogue_id'], wmn_id=wmn_id)}}">
+                    <span class="wmn-id">
+                        {{wmn_id}}
+                    </span>
+                    {% if data['wmn_count'] > 1 %}
+                    ({{data['wmn_count']}})
+                    {% endif %}
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+
+        </section>
+
+</div>
+
+
+{% endblock %}

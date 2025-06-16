@@ -1,0 +1,110 @@
+<form id="filter-form" action="./" method="GET" enctype="multipart/form-data">
+    <div class="section-header">Filter Options</div>
+    <div>
+        {% if "search" in get_data.keys() %}
+        {% set search_term = get_data['search'] %}
+        {% endif %}
+        <input
+            class="search"
+            type="text"
+            id="search"
+            name="search"
+            value="{{search_term}}"
+            placeholder="Search for matching annotated text, WMN ID or dialogue ID"
+        >
+    </div>
+    <hr>
+    <div class="auto-grid three">
+        <div>
+            <label for="label-name">Part of sequence</label><br>
+            <select id="label-name" name="label-name" class="auto-submit">
+                <option value="">--no selection--</option>
+                {% for label in labels %}
+                    {% if "label-name" in get_data.keys() and get_data['label-name'] == label.name %}
+                        {% set label_selected = "selected" %}
+                    {% endif %}
+                    <option class="{{label.name}}" value="{{label.name}}" {{label_selected}}>{{label.value}}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="context">Interaction type</label><br>
+            <select id="context" name="context" class="auto-submit">
+                <option value="">--no selection--</option>
+                {% for context in context_labels %}
+                    {% if "context" in get_data.keys() and get_data['context'] == context.name %}
+                        {% set context_selected = "selected" %}
+                    {% endif %}
+                    <option value="{{context.name}}" {{context_selected}}>{{context.value}}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="corpus">Corpus</label><br>
+            <select id="corpus" name="corpus" class="auto-submit">
+                <option value="">--no selection--</option>
+                {% for corpus in Corpus %}
+                    {% if "corpus" in get_data.keys() and get_data['corpus'] == corpus.name %}
+                        {% set corpus_selected = "selected" %}
+                    {% endif %}
+                    <option value="{{corpus.name}}" {{corpus_selected}}>{{corpus.fullname}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <hr>
+    <div>Type of sequence:</div>
+    <div class="auto-grid three">
+        {% set index = namespace(value = 0) %}
+        {% for wmn in wmn_options %}
+            {% if index.value % 3 == 0 %}<div>{% endif %}
+                <input
+                    type="checkbox" {{wmn_selected}}
+                    class="auto-submit"
+                    id="{{wmn}}"
+                    value="{{wmn.name}}"
+                    name="{{wmn.name}}"
+                    {% if wmn.name in get_data.keys() and get_data[wmn.name] == wmn.name %}
+                        checked
+                    {% endif %}
+                >
+                <label for="{{wmn.name}}">{{wmn.value}}</label>
+                <br>
+            {% if index.value % 3 == 2 %}</div>{% endif %}
+            {% set index.value = index.value + 1 %}
+        {% endfor %}
+    </div>
+    <hr>
+    <div class="auto-grid three">
+        <div class="result-text">
+            {% if num_results == 0 %}
+                No results
+            {% else %}
+                Showing {{num_results}} results:
+            {% endif %}
+        </div>
+        <div class="group-by">
+            <select id="group-by" name="group-by" class="auto-submit">
+                {% for option in groupings %}
+                    {% if "group-by" in get_data.keys() and get_data['group-by'] == option.name %}
+                        {% set order_by_selected = "selected" %}
+                    {% elif option == GroupBy.DIALOGUE %}
+                        {% set order_by_selected = "selected" %}
+                    {% endif %}
+                    <option value="{{option.name}}" {{order_by_selected}}>{{option.value}}</option>
+                {% endfor %}
+            </select>
+            <label for="group-by">Group By</label>
+        </div>
+        <div>
+            {% if "mode" in get_data.keys() %}
+                {% set mode_checked = "checked" %}
+            {% endif %}
+            <label class="compact-switch">
+                <input id ="mode" type="checkbox" name="mode" value="compact" class="auto-submit" {{mode_checked}}>
+                <span class="compact-switch-slider round"></span>
+            </label>
+            <label class="compact-switch-label" for="mode">Compact view</label>
+        </div>
+    </div>
+</form>

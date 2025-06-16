@@ -1,0 +1,83 @@
+
+<div class="summary">
+
+    <div class="flex-container">
+        <div class="flex-box-1">
+            <div class="info-line">
+                <b>WMN Sequence ID:</b>
+                <a class="no-decorate" href="{{url_for('sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id)}}">
+                    <span class="wmn-id">
+                        {{summary.wmn_id}}
+                    </span>
+                </a>
+            </div>
+
+            <div class="info-line">
+                <b>Corpus codename:</b>
+                <span class="info-line-value">
+                    {{summary.corpus_codename}}
+                </span>
+            </div>
+
+            <div class="info-line">
+                <b>Dialogue ID:</b>
+                <a class="no-decorate" href="{{url_for('dialogue_page', dialogue_id=summary.dialogue_id)}}">
+                    <span class="diag-id">
+                        {{summary.dialogue_id}}
+                    </span>
+                </a>
+            </div>
+        </div>
+
+        <div class="flex-box-2">
+            <div class="info-line">
+                <b>Type:</b>
+                <span>
+                    {{summary.wmn_type.value}}
+                </span>
+            </div>
+
+            <div class="info-line">
+                <b>Meaning:</b>
+                <span>
+                    {{ summary.wmn_meaning.value }}
+                </span>
+            </div>
+
+            <div class="info-line">
+                <b>Context:</b>
+                {{summary.context.value}}
+            </div>
+        </div>
+    </div>
+
+    {% if summary.triggers %}
+    <div class="info-line">
+        <b>Triggers: </b>
+        {% for label, count in summary.triggers.items() %}
+        <div class="tag">
+            <span class="{{LabelName.TRIGGER.value}}">{{label | safe}}</span>
+            {% if count > 1 %}({{count}}){% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if summary.indicators %}
+    <div class="info-line">
+        <b>Indicators: </b>
+        {% for label, count in summary.indicators.items() %}
+        <div class="tag">
+            <span class="{{LabelName.INDICATOR.value}}">{{label | safe}}</span>
+            {% if count > 1 %}({{count}}){% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="info-line bottom-link">
+        <a href="{{url_for('sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id)}}">
+            See entire sequence
+        </a>
+    </div>
+</div>
+</a>

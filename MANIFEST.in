@@ -1,3 +1,3 @@
-include src/not_just_semantics/templates/*.html
-include src/not_just_semantics/static/*.css
-include src/not_just_semantics/wmn_annotations.json
+recursive-include src/newme/templates *
+include src/newme/static/*.css
+include src/newme/annotation/wmn_annotations.json

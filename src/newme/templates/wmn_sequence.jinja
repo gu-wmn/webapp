@@ -1,0 +1,125 @@
+{% extends "layout.jinja" %}
+{% set page_name = "WMN sequence: " ~ "ID" %}
+{% block title %}{{page_name}}{% endblock %}
+
+{% block content %}
+
+{% if "sequence" in page_name %}
+<div id="sequence-sidebar">
+    <h3 style="margin: 0 0px; margin-bottom: 10px;">Labels</h3>
+    {% for label in label_links %}
+        <div class="info-line">
+            <button class="highlight-link no-decorate {{label.name}}"
+                href="#"
+                onclick="scrollToLabel('{{label.link}}')"
+            >
+                {{label.name}}:
+                {% set stub = label.excerpt[:20] %}
+                {{stub}}{% if label.excerpt|length > 20 %}...{% endif %}
+            </button>
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div id="sequence-content">
+    <h2>
+        WMN:
+        <span class="wmn-id">
+            {{wmn_sequence.wmn_id}}
+        </span>
+    </h2>
+    <div class="info-line">
+        <b>Type:</b> {{wmn_sequence.wmn.value}}
+    </div>
+    <div class="info-line">
+        <b>Meaning:</b> {{wmn_sequence.wmn_meaning.value}}
+    </div>
+    <div class="info-line">
+        <b>Context:</b> {{wmn_sequence.context.value}}
+    </div>
+    <div class="info-line">
+        <b>Corpus:</b>
+        <a href="{{wmn_sequence.corpus_url}}" target="_blank">
+            {{wmn_sequence.corpus_fullname}}
+        </a>
+    </div>
+    <div class="info-line">
+        <b>License:</b>
+        <a href="{{wmn_sequence.corpus_license_url}}" target="_blank">
+            {{wmn_sequence.corpus_license_url}}
+        </a>
+    </div>
+    {% if wmn_sequence.sibling_wmn_ids | length > 1 %}
+    <div class="info-line">
+        <b>Sequences for the same dialogue:</b>
+        <div class="flex-list">
+        {% for sibling_id in wmn_sequence.sibling_wmn_ids %}
+            {% if sibling_id == wmn_sequence.wmn_id %}
+                {% set selected = "selected" %}
+            {% endif %}
+            <div>
+                <a class="no-decorate" href="{{url_for('sequence_page', dialogue_id=wmn_sequence.dialogue_id, wmn_id=sibling_id)}}">
+                    <span class="wmn-id {{selected}}">
+                        {{sibling_id}}
+                    </span>
+                </a>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <h2>
+        Dialogue:
+        <a class="no-decorate" href="{{url_for('dialogue_page', dialogue_id=wmn_sequence.dialogue_id)}}">
+            <span class="diag-id">
+                {{wmn_sequence.dialogue_id}}
+            </span>
+        </a>
+    </h2>
+
+    {% set index = namespace(value=0)%}
+    {% for utt in wmn_sequence.utterances %}
+        <div class="utterance">
+            <b>[{{utt.author}}]</b>
+            <p id="index-{{index.value}}">
+                {{utt.text | safe}}
+            </p>
+        </div>
+        {% set index.value = index.value + 1 %}
+    {% endfor %}
+</div>
+
+{# <script>
+function scrollToLabel(labelId) {
+  const target = document.getElementById(labelId);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+</script> #}
+
+<script>
+function scrollToLabel(labelId) {
+  const target = document.getElementById(labelId);
+  if (!target) return;
+
+  // Scroll smoothly
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Remove highlight from any previously highlighted spans
+  const prev = document.querySelector('.highlighted-active');
+  if (prev) prev.classList.remove('highlighted-active');
+
+  // Add highlight to the target span (including nested spans)
+  target.classList.add('highlighted-active');
+
+  // Optional: Remove highlight after 2 seconds (fade effect)
+  setTimeout(() => {
+    target.classList.remove('highlighted-active');
+  }, 2000);
+}
+</script>
+
+{% endblock %}

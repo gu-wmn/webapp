@@ -1,0 +1,84 @@
+<div class="summary">
+
+    <div class="info-line">
+        <b>Dialogue ID:</b>
+        <a class="no-decorate" href="{{url_for('dialogue_page', dialogue_id=summary.dialogue_id)}}">
+            <span class="diag-id">
+                {{summary.dialogue_id}}
+            </span>
+        </a>
+    </div>
+
+    <div class="info-line">
+        <b>Corpus:</b>
+        <span class="info-line-value">
+            {{summary.corpus_fullname.value}}
+        </span>
+    </div>
+
+    <div class="info-line">
+        <b>Context:</b>
+        {{summary.context.value}}
+    </div>
+
+    <div class="info-line">
+        <b>WMN Sequences:</b>
+        {% for sequence_id in summary.sequence_ids %}
+        <a class="no-decorate" href="{{url_for('sequence_page', dialogue_id=summary.dialogue_id, wmn_id=sequence_id)}}">
+            <span class="tag wmn-id">
+            {{sequence_id}}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+
+    <div class="info-line">
+        <b>Types:</b>
+        {% for type in summary.wmn_types %}
+        <span>
+            {{type.value}}{{ ", " if not loop.last else "" }}
+        </span>
+        {% endfor %}
+    </div>
+
+    <div class="info-line">
+        <b>Meanings:</b>
+        {% for meaning in summary.wmn_meanings %}
+        <span>
+            {{meaning.value}}{{ ", " if not loop.last else "" }}
+        </span>
+        {% endfor %}
+    </div>
+
+
+    {% if summary.triggers %}
+    <div class="info-line">
+        <b>Triggers: </b>
+        {% for label, count in summary.triggers.items() %}
+            <span class="tag {{LabelName.TRIGGER.value}}">{{label | safe}}</span>
+            {% if count > 1 %}({{count}}){% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if summary.indicators %}
+    <div class="info-line">
+        <b>Indicators: </b>
+        {% for label, count in summary.indicators.items() %}
+        <div class="tag">
+            <span class="{{LabelName.INDICATOR.value}}">{{label | safe}}</span>
+            {% if count > 1 %}({{count}}){% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="info-line bottom-link">
+        <a href="{{url_for('dialogue_page', dialogue_id=summary.dialogue_id)}}">
+            <span>
+                Go to dialogue page
+            </span>
+        </a>
+    </div>
+</div>
+</a>

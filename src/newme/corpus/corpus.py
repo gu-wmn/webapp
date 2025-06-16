@@ -4,26 +4,11 @@ import shutil
 import hashlib
 import zipfile
 import requests
-from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 import json
 import regex as re
 
-
-@dataclass
-class MetaData:
-    fullname: str
-    license_url: str
-    url: str
-
-
-@dataclass
-class Utterance:
-    author: str
-    text: str
-    author_plain: str = None
-    reply_to: str = None
-    utt_order_num: str = None
+from newme.corpus.models import MetaData, Utterance
 
 
 class Corpus:
@@ -55,7 +40,6 @@ class Corpus:
             'md5sum': '714650ec360b91ba37452e4f7448c44a',
             'dialogues': []
         }
-
     }
 
     _extracted_corpora_path: str
