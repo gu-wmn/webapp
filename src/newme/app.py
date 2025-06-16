@@ -1,6 +1,5 @@
 import flask
 from werkzeug.middleware.proxy_fix import ProxyFix
-from bs4 import BeautifulSoup
 
 import newme.annotation as annotation
 from newme.corpus.types import CorpusName

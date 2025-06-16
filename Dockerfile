@@ -7,8 +7,7 @@ COPY ./src ./src
 COPY ./MANIFEST.in .
 COPY ./setup.py .
 
-#RUN apt update
-#RUN pip install -r requirements.txt
+RUN pip install --upgrade setuptools
 RUN pip install .
 
 # remove the source from /srv
@@ -16,4 +15,4 @@ RUN rm -rf ./*
 
 # Start the server
 ENV USE_PROXY_FIX = true
-CMD ["gunicorn", "--bind=0.0.0.0", "not_just_semantics.app:create_app()"]
+CMD ["gunicorn", "--bind=0.0.0.0", "newme.app:create_app()"]
