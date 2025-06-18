@@ -2,10 +2,10 @@
 
 ## About this web application
 
-This is a web application for the research project [Not Just Semantics](https://dev.clasp.gu.se/word-negotiation/about).
+This is a web application for the research project [NeWMe](https://dev.clasp.gu.se/newme/about).
 It applies and displays standoff annotation with a series of corpora.
-The standoff annotation can be found at [./src/not_just_semantics/wmn_annotation.json](https://github.com/gu-wmn/webapp/blob/main/src/not_just_semantics/wmn_annotations.json),
-while the corpora will be downloaded at first run and a portion of the corpus text will be extracted into a local json file.
+The standoff annotation can be found at [./src/newme/annotation/wmn_annotation.json](https://github.com/gu-wmn/webapp/blob/main/src/newme/annotation/wmn_annotations.json),
+while the corpora will be downloaded at first run of this application and a portion of the corpus text will then be extracted into a local json file.
 
 ### Corpora
 
@@ -15,14 +15,14 @@ Corpora currently used:
 * [Winning Arguments (ChangeMyView) Corpus](https://convokit.cornell.edu/documentation/winning.html) - (License Unknown)
 * [Switchboard Dialog Act Corpus](http://compprag.christopherpotts.net/swda.html) - [License: CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/)
 
-Currently the size of the corpora will take up about 6GB of space.
+The size of the corpora is about 6GB on disk.
 
 ## Running this web app
 
 First:
 ```
 git clone <url>
-cd word_negotiation/
+cd webapp/
 ```
 
 ### Run locally with flask in a python venv
@@ -34,7 +34,7 @@ Do:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-flask --app src/not_just_semantics/app run
+flask --app src/newme/app run
 ```
 Then, go to: [http://localhost:5000](http://localhost:5000)
 
@@ -46,7 +46,7 @@ Corpora will be downloaded to /srv on the docker. In this example, /srv is mount
 
 To run the web application with docker, do:
 ```(bash)
-docker build -t not_just_semantics:latest .
-docker run -d -v./:/srv -p 127.0.0.1:8000:8000  not_just_semantics:latest
+docker build -t newme:latest .
+docker run -v./:/srv -p 127.0.0.1:8000:8000 newme:latest
 ```
 Then, go to: [http://localhost:8000](http://localhost:8000)
