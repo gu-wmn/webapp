@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Label{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h1>Label</h1>
+  <p><b>Type:</b> {{ label.label_name }}</p>
+  <p><b>Excerpt:</b> <span class="{{ label.label_name }}">{{ label.excerpt }}</span>{% if label.count > 1 %} ({{ label.count }}){% endif %}</p>
+
+  <p><b>Found in dialogues:</b></p>
+  <div class="tag-wrap">
+    {% for dialogue_id in label.dialogue_ids %}
+      <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=dialogue_id) }}">{{ dialogue_id }}</a>
+    {% endfor %}
+  </div>
+
+  <p><b>Found in WMN sequences:</b></p>
+  <div class="tag-wrap">
+    {% for wmn_id, data in label.sequence_ids.items() %}
+      <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=data.dialogue_id, wmn_id=wmn_id) }}">
+        {{ wmn_id }}{% if data.wmn_count > 1 %} ({{ data.wmn_count }}){% endif %}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

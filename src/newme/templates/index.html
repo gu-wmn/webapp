@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Browse Sequences{% endblock %}
+
+{% block content %}
+<section class="panel filter-panel">
+  <div class="panel-header-row">
+    <h1>Browse Sequences</h1>
+    <a class="filter-reset-link" href="{{ url_for('main.main_page') }}">Reset filters</a>
+  </div>
+
+  <form id="main-filter-form" method="get" action="{{ url_for('main.main_page') }}" class="filter-form">
+    <div class="field-row">
+      <label for="search">Search</label>
+      <input
+        id="search"
+        name="search"
+        type="text"
+        value="{{ filters.search }}"
+        placeholder="Search label text, WMN ID or dialogue ID"
+      >
+    </div>
+
+    <div class="field-grid three">
+      <div>
+        <label for="label-name">Part of sequence</label>
+        <select id="label-name" name="label-name">
+          <option value="">--no selection--</option>
+          {% for label_name, label_value in label_options %}
+            <option value="{{ label_name }}" {% if filters.label_name_key == label_name %}selected{% endif %}>{{ label_value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="context">Interaction type</label>
+        <select id="context" name="context">
+          <option value="">--no selection--</option>
+          {% for context_name, context_value in context_options %}
+            <option value="{{ context_name }}" {% if filters.context_key == context_name %}selected{% endif %}>{{ context_value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="corpus">Corpus</label>
+        <select id="corpus" name="corpus">
+          <option value="">--no selection--</option>
+          {% for corpus in corpus_options %}
+            <option value="{{ corpus.codename }}" {% if filters.corpus == corpus.codename %}selected{% endif %}>{{ corpus.fullname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <fieldset class="wmn-types">
+      <legend>Type of sequence</legend>
+      <div class="field-grid three">
+        {% for option in filters.wmn_options %}
+          <label class="checkbox-row" for="wmn-{{ option.name }}">
+            <input
+              id="wmn-{{ option.name }}"
+              type="checkbox"
+              name="{{ option.name }}"
+              value="{{ option.name }}"
+              {% if option.checked %}checked{% endif %}
+            >
+            <span>{{ option.value }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <div class="field-grid two align-end">
+      <div class="view-controls">
+        <label for="group-by">View options</label>
+        <div class="view-options">
+          <select id="group-by" name="group-by">
+            {% for group_name, group_value in group_by_options %}
+              <option value="{{ group_name }}" {% if filters.group_by == group_name %}selected{% endif %}>{{ group_value }}</option>
+            {% endfor %}
+          </select>
+
+          <label class="checkbox-row compact" for="mode">
+            <input id="mode" type="checkbox" name="mode" value="compact" {% if filters.compact %}checked{% endif %}>
+            <span>Compact view</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Apply filters</button>
+        <button id="open-csv-download" type="button">
+          Download CSV
+        </button>
+      </div>
+    </div>
+  </form>
+</section>
+
+<div id="csv-download-modal" class="csv-modal-overlay" hidden>
+  <section class="panel csv-modal-window" role="dialog" aria-modal="true" aria-labelledby="csv-modal-title">
+    <h2 id="csv-modal-title">Download CSV</h2>
+    <p>Select columns to include in export.</p>
+
+    <form id="csv-download-form" method="get" action="{{ url_for('main.download_csv') }}">
+      <fieldset class="wmn-types">
+        <legend>CSV Columns</legend>
+        <div class="field-grid three">
+          {% for option in filters.csv_column_options %}
+            <label class="checkbox-row" for="modal-csv-col-{{ option.key }}">
+              <input
+                id="modal-csv-col-{{ option.key }}"
+                type="checkbox"
+                name="{{ option.param_name }}"
+                value="{{ option.key }}"
+                {% if option.checked %}checked{% endif %}
+              >
+              <span>{{ option.label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div id="csv-download-hidden-fields"></div>
+
+      <div class="csv-modal-actions">
+        <button id="cancel-csv-download" type="button" class="csv-modal-cancel">Cancel</button>
+        <button type="submit">Download</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<p class="result-count">
+  {% if num_results == 0 %}
+    No results
+  {% else %}
+    Showing {{ num_results }} results
+  {% endif %}
+</p>
+
+<section class="results-list">
+  {% for summary in summaries %}
+    {% if filters.group_by == "LABEL" %}
+      {% include 'summary/by_label.html' %}
+    {% elif filters.group_by == "DIALOGUE" %}
+      {% include 'summary/by_dialogue.html' %}
+    {% else %}
+      {% include 'summary/by_sequence.html' %}
+    {% endif %}
+  {% endfor %}
+</section>
+
+<script>
+(() => {
+  const filterForm = document.getElementById("main-filter-form");
+  const searchInput = document.getElementById("search");
+  const openButton = document.getElementById("open-csv-download");
+  const modal = document.getElementById("csv-download-modal");
+  const modalForm = document.getElementById("csv-download-form");
+  const cancelButton = document.getElementById("cancel-csv-download");
+  const hiddenFieldContainer = document.getElementById("csv-download-hidden-fields");
+
+  if (!filterForm || !openButton || !modal || !modalForm || !cancelButton || !hiddenFieldContainer) {
+    return;
+  }
+
+  const appliedSearch = searchInput ? searchInput.defaultValue : "";
+  const autoSubmitControls = filterForm.querySelectorAll("select, input[type='checkbox']");
+
+  const submitFiltersFromChange = () => {
+    if (searchInput) {
+      searchInput.value = appliedSearch;
+    }
+    filterForm.requestSubmit();
+  };
+
+  for (const control of autoSubmitControls) {
+    control.addEventListener("change", submitFiltersFromChange);
+  }
+
+  const openModal = () => {
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    const firstCheckbox = modal.querySelector("input[type='checkbox']");
+    if (firstCheckbox) {
+      firstCheckbox.focus();
+    }
+  };
+
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.classList.remove("modal-open");
+  };
+
+  openButton.addEventListener("click", () => {
+    openModal();
+  });
+
+  cancelButton.addEventListener("click", () => {
+    closeModal();
+    openButton.focus();
+  });
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeModal();
+      openButton.focus();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.hidden) {
+      closeModal();
+      openButton.focus();
+    }
+  });
+
+  modalForm.addEventListener("submit", () => {
+    hiddenFieldContainer.innerHTML = "";
+    const formData = new FormData(filterForm);
+
+    for (const [name, value] of formData.entries()) {
+      if (name.startsWith("csv-col-")) {
+        continue;
+      }
+      const hiddenInput = document.createElement("input");
+      hiddenInput.type = "hidden";
+      hiddenInput.name = name;
+      hiddenInput.value = String(value);
+      hiddenFieldContainer.appendChild(hiddenInput);
+    }
+
+    closeModal();
+  });
+})();
+</script>
+{% endblock %}

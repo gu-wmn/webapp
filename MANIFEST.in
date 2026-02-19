@@ -1,3 +1,1 @@
-recursive-include src/newme/templates *
-include src/newme/static/*.css
-include src/newme/annotation/wmn_annotations.json
+recursive-include src/newme *

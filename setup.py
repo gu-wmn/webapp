@@ -2,21 +2,25 @@ from setuptools import setup, find_packages
 
 setup(
     name='newme',
-    version='0.2.0',
-    description='A web app that applies standoff annotation to corpora',
+    version='0.3.0',
+    description='A Flask web app with SQL-backed setup flow',
     url='https://github.com/gu-wmn/webapp',
     author='Kaj Ailomaa',
     author_email='kaj.ailomaa@gu.se',
     license='MIT',
-    packages=find_packages(where="src"),
+    packages=find_packages(where="src", include=["newme", "newme.*"]),
     package_dir={"": "src"},
     include_package_data=True,
+    package_data={
+        "newme": ["data/wmn_annotations.json"],
+    },
     install_requires=[
-        'regex',
         'flask',
-        'requests',
-        'gunicorn'
+        'flask-sqlalchemy',
+        'gunicorn',
+        'requests'
     ],
+    python_requires='>=3.12',
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Science/Research',

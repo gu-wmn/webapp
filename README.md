@@ -1,52 +1,74 @@
-# README
+# newme
 
-## About this web application
+New Flask rewrite scaffold with SQL-backed setup gating.
 
-This is a web application for the research project [NeWMe](https://dev.clasp.gu.se/newme/about).
-It applies and displays standoff annotation with a series of corpora.
-The standoff annotation can be found at [./src/newme/annotation/wmn_annotation.json](https://github.com/gu-wmn/webapp/blob/main/src/newme/annotation/wmn_annotations.json),
-while the corpora will be downloaded at first run of this application and a portion of the corpus text will then be extracted into a local json file.
+## Project layout
 
-### Corpora
+- Active package: `src/newme`
+- Legacy code archive: `legacy_src/newme.old`
 
-Corpora currently used:
+## Local development
 
-* [British National Corpus](http://www.natcorp.ox.ac.uk/) - [BNC user license](http://www.natcorp.ox.ac.uk/docs/licence.html)
-* [Winning Arguments (ChangeMyView) Corpus](https://convokit.cornell.edu/documentation/winning.html) - (License Unknown)
-* [Switchboard Dialog Act Corpus](http://compprag.christopherpotts.net/swda.html) - [License: CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/)
-
-The size of the corpora is about 6GB on disk.
-
-## Running this web app
-
-First:
-```
-git clone <url>
-cd webapp/
-```
-
-### Run locally with flask in a python venv
-
-When using this method, corpora will be downloaded to current dir.
-
-Do:
-```(bash)
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-flask --app src/newme/app run
+export NEWME_DATA_PATH=/absolute/path/to/newme-data
+export PYTHONPATH=./src
+export FLASK_APP=newme.wsgi
+flask run
 ```
-Then, go to: [http://localhost:5000](http://localhost:5000)
 
+## Installation flow
 
-### Running the web application as a docker
+The app treats installation as database initialization.
 
-Corpora will be downloaded to /srv on the docker. In this example, /srv is mounted to
-./ (current dir).
+- Before installation, regular routes redirect to `/setup/`.
+- Complete installation with one of:
+  - `flask install`
+  - `POST /setup/`
+- `flask install` downloads configured corpora and stores extracted data in SQL tables.
+- `flask install` also imports `wmn_annotations.json` into SQL tables by default.
+- Use `flask install --skip-corpora --skip-annotations` to initialize DB/state only.
 
-To run the web application with docker, do:
-```(bash)
-docker build -t newme:latest .
-docker run -v./:/srv -p 127.0.0.1:8000:8000 newme:latest
+After installation, `/` returns the normal application response.
+The demo UI is available at:
+
+- `/` browse page with old-style filters and grouped summaries
+- `/wmn/<dialogue_id>/<wmn_id>/` WMN sequence page
+- `/dialogue/<dialogue_id>` dialogue page
+- `/label/<excerpt_hash>` label page
+
+## Configuration
+
+Use environment variables for deployment:
+
+- `NEWME_ENV_FILE` (optional; path to env file loaded at startup)
+  If unset, startup checks `./.env` first, then `./.env.example`.
+- `NEWME_DATA_PATH` (required; used for SQLite fallback and corpora storage)
+- `DATABASE_URL` (optional; if omitted, SQLite is created at `$NEWME_DATA_PATH/newme.sqlite3`)
+- `SECRET_KEY`
+- `NEWME_INSTALL_CORPORA_ON_SETUP` (default: `true`)
+- `NEWME_INSTALL_ANNOTATIONS_ON_SETUP` (default: `true`)
+- `NEWME_ANNOTATIONS_PATH` (path to annotation JSON; default auto-detected)
+- `NEWME_CORPORA_ENABLED` (comma-separated; default: `bnc,winning-args-corpus,switchboard-corpus`)
+- `NEWME_CORPORA_ANNOTATIONS_PATH` (optional; if set, only matching dialogue IDs are extracted)
+- `NEWME_CORPORA_DIALOGUE_IDS` (optional comma-separated filter IDs)
+- `NEWME_CORPORA_CONFIG_PATH` (optional JSON overrides for corpus URLs/md5/etc)
+- `NEWME_CORPORA_TIMEOUT_SECONDS` (default: `120`)
+- `NEWME_CORPORA_FORCE_REDOWNLOAD` (default: `false`)
+
+Optional instance config file:
+
+- `instance/config.py`
+
+Example `NEWME_CORPORA_CONFIG_PATH` JSON:
+
+```json
+{
+  "bnc": {
+    "download_url": "https://example.org/bnc.zip",
+    "md5sum": "expected-md5"
+  }
+}
 ```
-Then, go to: [http://localhost:8000](http://localhost:8000)

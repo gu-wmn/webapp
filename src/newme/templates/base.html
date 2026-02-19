@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} - {{ site_title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="{{ url_for('main.main_page') }}">NeWMe</a>
+      <nav class="site-nav">
+        <a href="{{ url_for('main.main_page') }}">Browse</a>
+        <a href="{{ url_for('main.about_page') }}">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+  (() => {
+    const normalizeText = (value) => (value || "").replace(/\s+/g, " ").trim();
+    const shorten = (value, maxLength = 68) => (
+      value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}...`
+    );
+
+    const tooltipFor = (anchor) => {
+      const href = anchor.getAttribute("href") || "";
+      const text = shorten(normalizeText(anchor.textContent || ""));
+      const hasGenericActionText = /^(see|visit|go to|open)\b/i.test(text);
+      const textForDestination = text && !hasGenericActionText ? text : "";
+      const targetBlank = anchor.getAttribute("target") === "_blank";
+      const classes = anchor.classList;
+
+      let title = "";
+      if (classes.contains("brand")) {
+        title = "Visit NeWMe home";
+      } else if (classes.contains("filter-reset-link")) {
+        title = "See default filters";
+      } else if (classes.contains("wmn-id")) {
+        title = text ? `See WMN sequence ${text}` : "See WMN sequence";
+      } else if (classes.contains("diag-id")) {
+        title = text ? `See dialogue ${text}` : "See dialogue";
+      } else if (classes.contains("Trigger")) {
+        title = text ? `See trigger details: ${text}` : "See trigger details";
+      } else if (classes.contains("Indicator")) {
+        title = text ? `See indicator details: ${text}` : "See indicator details";
+      } else if (classes.contains("Negotiation")) {
+        title = text ? `See negotiation span: ${text}` : "See negotiation span";
+      } else if (href.startsWith("#")) {
+        title = textForDestination ? `See ${textForDestination}` : "See this section";
+      } else if (href.includes("/wmn/")) {
+        title = textForDestination ? `See WMN sequence ${textForDestination}` : "See WMN sequence";
+      } else if (href.includes("/dialogue/")) {
+        title = textForDestination ? `See dialogue ${textForDestination}` : "See dialogue";
+      } else if (href.includes("/label/")) {
+        title = textForDestination ? `See label details: ${textForDestination}` : "See label details";
+      } else if (href.includes("/about")) {
+        title = "Visit About page";
+      } else if (href === "/" || href.endsWith("/")) {
+        title = "Visit Browse Sequences";
+      } else if (href) {
+        title = textForDestination ? `Visit ${textForDestination}` : "Visit link";
+      }
+
+      if (!title) {
+        return "";
+      }
+      if (targetBlank) {
+        return `${title} (opens in new tab)`;
+      }
+      return title;
+    };
+
+    for (const anchor of document.querySelectorAll("a[href]")) {
+      if (anchor.hasAttribute("title")) {
+        continue;
+      }
+      const tooltip = tooltipFor(anchor);
+      if (tooltip) {
+        anchor.setAttribute("title", tooltip);
+      }
+    }
+  })();
+  </script>
+</body>
+</html>

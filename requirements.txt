@@ -1,3 +1,4 @@
-regex
 flask
+flask-sqlalchemy
+gunicorn
 requests

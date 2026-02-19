@@ -1,0 +1,35 @@
+{% if filters.compact %}
+  <article class="compact-summary">
+    <a class="tag {{ summary.label_type }}" href="{{ url_for('main.label_page', excerpt_hash=summary.excerpt_hash) }}">{{ summary.excerpt | highlight_search(filters.search) }}</a>{% if summary.count > 1 %} ({{ summary.count }}){% endif %}
+
+    {% for wmn_type_short in summary.wmn_type_shorts %}
+      <span class="tag wmn-type-short">{{ wmn_type_short }}</span>
+    {% endfor %}
+
+    {% for dialogue_id in summary.dialogue_ids %}
+      <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=dialogue_id) }}">{{ dialogue_id | highlight_search(filters.search) }}</a>
+    {% endfor %}
+
+    {% for wmn_id, data in summary.sequence_ids.items() %}
+      <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=data.dialogue_id, wmn_id=wmn_id) }}">{{ wmn_id | highlight_search(filters.search) }}</a>
+    {% endfor %}
+  </article>
+{% else %}
+  <article class="summary-card">
+    <p><b>{{ summary.label_type }}:</b> <a class="tag {{ summary.label_type }}" href="{{ url_for('main.label_page', excerpt_hash=summary.excerpt_hash) }}">{{ summary.excerpt | highlight_search(filters.search) }}</a>{% if summary.count > 1 %} ({{ summary.count }}){% endif %}</p>
+
+    <p><b>Found in dialogues:</b>
+      {% for dialogue_id in summary.dialogue_ids %}
+        <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=dialogue_id) }}">{{ dialogue_id | highlight_search(filters.search) }}</a>
+      {% endfor %}
+    </p>
+
+    <p><b>Found in WMN sequences:</b>
+      {% for wmn_id, data in summary.sequence_ids.items() %}
+        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=data.dialogue_id, wmn_id=wmn_id) }}">{{ wmn_id | highlight_search(filters.search) }}</a>
+      {% endfor %}
+    </p>
+
+    <p><b>Found in corpora:</b> {{ summary.corpora | join(', ') }}</p>
+  </article>
+{% endif %}

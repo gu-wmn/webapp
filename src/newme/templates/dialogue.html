@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dialogue {{ dialogue_id }}{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="meta-block">
+    <h1>Dialogue ID: <span class="diag-id">{{ dialogue_id }}</span></h1>
+
+    <p><b>Corpus:</b> {{ corpus.fullname if corpus else '-' }}</p>
+    {% if corpus %}
+      <p><b>URL:</b> <a href="{{ corpus.url }}" target="_blank" rel="noopener noreferrer">{{ corpus.url }}</a></p>
+      <p><b>License:</b> <a href="{{ corpus.license_url }}" target="_blank" rel="noopener noreferrer">{{ corpus.license_url }}</a></p>
+    {% endif %}
+
+    <p><b>WMN sequences ({{ sequence_summaries|length }}):</b></p>
+    <div class="tag-wrap">
+      {% for sequence in sequence_summaries %}
+        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{% for sequence in sequence_summaries %}
+  <section class="summary-card">
+    <div class="meta-block">
+      <p><b>WMN ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}</a></p>
+      <p><b>Context:</b> {{ sequence.context }}</p>
+      <p><b>WMN Type:</b> {{ sequence.wmn_type }}</p>
+      <p><b>WMN Meaning:</b> {{ sequence.wmn_meaning }}</p>
+    </div>
+
+    {% if sequence.triggers %}
+      <p><b>Trigger words:</b>
+        {% for excerpt, count in sequence.triggers.items() %}
+          <span class="tag Trigger">{{ excerpt }}{% if count > 1 %} ({{ count }}){% endif %}</span>
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    {% if sequence.indicators %}
+      <p><b>Indicator sentences:</b>
+        {% for excerpt, count in sequence.indicators.items() %}
+          <span class="tag Indicator">{{ excerpt }}{% if count > 1 %} ({{ count }}){% endif %}</span>
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    {% if sequence.negotiations %}
+      <p><b>Negotiation parts:</b>
+        {% for excerpt, count in sequence.negotiations.items() %}
+          <span class="tag Negotiation">{{ excerpt }}{% if count > 1 %} ({{ count }}){% endif %}</span>
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    <p class="bottom-link"><a href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">See entire sequence</a></p>
+  </section>
+{% endfor %}
+{% endblock %}
