@@ -16,6 +16,9 @@
     {% for label_text, label_data in summary.indicators.items() %}
       <a class="tag Indicator" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
     {% endfor %}
+    {% for negotiation in summary.negotiations %}
+      <span class="tag Negotiation">{{ negotiation.excerpt | highlight_search(filters.search) }}</span>
+    {% endfor %}
   </article>
 {% else %}
   <article class="summary-card">
