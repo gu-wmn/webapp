@@ -9,7 +9,11 @@
       <ul class="label-nav">
       {% for label in label_links %}
         <li>
-          <a class="{{ label.name }}" href="#{{ label.link }}">{{ label.name }}: {{ label.excerpt[:26] }}{% if label.excerpt|length > 26 %}...{% endif %}</a>
+          {% if label.link %}
+            <a class="{{ label.name }}" href="#{{ label.link }}">{{ label.name }}: {{ label.excerpt[:26] }}{% if label.excerpt|length > 26 %}...{% endif %}</a>
+          {% else %}
+            <span class="{{ label.name }}">{{ label.name }}: {{ label.excerpt[:26] }}{% if label.excerpt|length > 26 %}...{% endif %}</span>
+          {% endif %}
         </li>
       {% endfor %}
       </ul>
@@ -52,6 +56,17 @@
         data-first-label-index="{{ truncation.first_label_index if truncation.first_label_index is not none else -1 }}"
         data-last-label-index="{{ truncation.last_label_index if truncation.last_label_index is not none else -1 }}"
       >
+        {% if dialogue_missing %}
+          <div class="warning-callout" role="alert" aria-live="polite">
+            <p><strong>Warning: Dialogue unavailable</strong></p>
+            <p>
+              The dialogue text for this sequence could not be loaded.
+              This usually means corpus download or extraction failed.
+              Annotation labels are still shown in the left panel.
+            </p>
+          </div>
+        {% endif %}
+
         {% if truncation.omitted_before > 0 %}
           <div class="truncation-controls truncation-controls-top" data-truncation-control="start" hidden>
             <button type="button" class="truncation-toggle" aria-label="Show earlier context">

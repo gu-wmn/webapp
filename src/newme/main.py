@@ -253,6 +253,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
             .all()
         )
         utterances = [{"author": row.author, "text": row.text} for row in utterance_rows]
+    dialogue_missing = dialogue is None or not utterances
 
     labels = [
         {
@@ -270,6 +271,15 @@ def sequence_page(dialogue_id: str, wmn_id: str):
     truncation = _label_truncation_bounds(labels, len(utterances))
 
     annotated_utterances, label_links = _annotate_utterances(utterances, labels)
+    if dialogue_missing and labels:
+        label_links = [
+            {
+                "name": label["name"],
+                "excerpt": str(label.get("excerpt") or ""),
+                "link": "",
+            }
+            for label in labels
+        ]
 
     return render_template(
         "wmn.html",
@@ -280,6 +290,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
         utterances=annotated_utterances,
         label_links=label_links,
         truncation=truncation,
+        dialogue_missing=dialogue_missing,
     )
 
 

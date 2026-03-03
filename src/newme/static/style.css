@@ -393,6 +393,20 @@ body.modal-open {
   gap: 1rem;
 }
 
+.warning-callout {
+  margin: 0.3rem 0 0.7rem;
+  padding: 0.62rem 0.74rem;
+  border: 1px solid #dfc28d;
+  border-left: 6px solid #b35a00;
+  border-radius: 10px;
+  background: #fff2dc;
+  color: #4a2b00;
+}
+
+.warning-callout p {
+  margin: 0.12rem 0;
+}
+
 .compact-summary {
   padding: 0.65rem 0.7rem;
   margin-bottom: 0.55rem;
