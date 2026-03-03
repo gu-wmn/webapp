@@ -49,8 +49,10 @@ class CorpusInstaller:
         self._force_redownload = bool(config.get("CORPORA_FORCE_REDOWNLOAD", False))
 
         self._corpora_dir = Path(config["CORPORA_PATH"])
+        self._corpora_dir.mkdir(parents=True, exist_ok=True)
         self._source_dir = Path(config.get("CORPORA_SOURCE_DIR", self._corpora_dir / "original_corpora"))
         self._source_dir.mkdir(parents=True, exist_ok=True)
+        self._extracted_corpora_path = self._corpora_dir / "extracted_corpora.json"
 
         self._corpora = self._load_corpora_definitions(config.get("CORPORA_CONFIG_PATH"))
         self._enabled_corpora = self._resolve_enabled_corpora(config.get("CORPORA_ENABLED"))
@@ -64,6 +66,7 @@ class CorpusInstaller:
 
         dialogue_counts: dict[str, int] = {}
         failed_corpora: dict[str, str] = {}
+        extracted_corpora = self._build_extracted_corpora_skeleton()
         for codename in self._enabled_corpora:
             self._log(f"Processing corpus: {codename}")
             try:
@@ -77,21 +80,45 @@ class CorpusInstaller:
                     raise ValueError(f"Unsupported corpus extractor for '{codename}'")
                 count = self._store_corpus(codename, dialogues)
                 dialogue_counts[codename] = count
+                extracted_corpora[codename]["dialogues"] = dialogues
                 self._log(f"Stored {count} dialogues for {codename}.")
             except Exception as exc:
                 db.session.rollback()
                 failed_corpora[codename] = str(exc)
                 self._log(f"Failed corpus '{codename}', continuing with next: {exc}")
 
+        self._write_extracted_corpora_json(extracted_corpora)
+
         summary = {
             "enabled_corpora": self._enabled_corpora,
             "dialogue_counts": dialogue_counts,
             "failed_corpora": failed_corpora,
+            "extracted_corpora_path": str(self._extracted_corpora_path),
         }
         self._log(f"Corpora extraction summary: {summary['dialogue_counts']}")
         if failed_corpora:
             self._log(f"Corpora failed: {failed_corpora}")
         return summary
+
+    def _build_extracted_corpora_skeleton(self) -> dict[str, dict[str, Any]]:
+        payload: dict[str, dict[str, Any]] = {}
+        for codename, corpus_def in self._corpora.items():
+            payload[codename] = {
+                "fullname": str(corpus_def.get("fullname") or codename),
+                "license_url": str(corpus_def.get("license_url") or ""),
+                "url": str(corpus_def.get("url") or ""),
+                "download_url": str(corpus_def.get("download_url") or ""),
+                "md5sum": str(corpus_def.get("md5sum") or ""),
+                "dialogues": [],
+            }
+        return payload
+
+    def _write_extracted_corpora_json(self, payload: dict[str, dict[str, Any]]) -> None:
+        try:
+            self._extracted_corpora_path.write_text(json.dumps(payload), encoding="utf-8")
+            self._log(f"Saved extracted corpora JSON: {self._extracted_corpora_path}")
+        except OSError as exc:
+            self._log(f"Failed to save extracted corpora JSON: {exc}")
 
     def _store_corpus(self, codename: str, dialogues: list[dict[str, Any]]) -> int:
         corpus_def = self._corpora[codename]
