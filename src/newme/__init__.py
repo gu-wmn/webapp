@@ -63,14 +63,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             install_annotations=not skip_annotations,
             logger=click.echo,
         )
-        if result.get("corpora"):
-            click.echo(f"Corpora stored: {result['corpora']['dialogue_counts']}")
+        corpora_result = result.get("corpora")
+        if isinstance(corpora_result, dict) and "dialogue_counts" in corpora_result:
+            click.echo(f"Corpora stored: {corpora_result['dialogue_counts']}")
         if result.get("annotations"):
             click.echo(
                 "Annotations stored: "
                 f"{result['annotations']['sequence_count']} sequences, "
                 f"{result['annotations']['label_count']} labels"
             )
+        for warning in result.get("warnings", []):
+            click.echo(f"Warning: {warning}")
         click.echo("Installation complete.")
 
     return app

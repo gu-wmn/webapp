@@ -63,22 +63,34 @@ class CorpusInstaller:
             self._log("No dialogue filter configured; full corpora extraction will run.")
 
         dialogue_counts: dict[str, int] = {}
+        failed_corpora: dict[str, str] = {}
         for codename in self._enabled_corpora:
             self._log(f"Processing corpus: {codename}")
-            if codename == "switchboard-corpus":
-                dialogues = self._extract_switchboard()
-            elif codename == "winning-args-corpus":
-                dialogues = self._extract_winning_args()
-            elif codename == "bnc":
-                dialogues = self._extract_bnc()
-            else:
-                raise ValueError(f"Unsupported corpus extractor for '{codename}'")
-            count = self._store_corpus(codename, dialogues)
-            dialogue_counts[codename] = count
-            self._log(f"Stored {count} dialogues for {codename}.")
+            try:
+                if codename == "switchboard-corpus":
+                    dialogues = self._extract_switchboard()
+                elif codename == "winning-args-corpus":
+                    dialogues = self._extract_winning_args()
+                elif codename == "bnc":
+                    dialogues = self._extract_bnc()
+                else:
+                    raise ValueError(f"Unsupported corpus extractor for '{codename}'")
+                count = self._store_corpus(codename, dialogues)
+                dialogue_counts[codename] = count
+                self._log(f"Stored {count} dialogues for {codename}.")
+            except Exception as exc:
+                db.session.rollback()
+                failed_corpora[codename] = str(exc)
+                self._log(f"Failed corpus '{codename}', continuing with next: {exc}")
 
-        summary = {"enabled_corpora": self._enabled_corpora, "dialogue_counts": dialogue_counts}
+        summary = {
+            "enabled_corpora": self._enabled_corpora,
+            "dialogue_counts": dialogue_counts,
+            "failed_corpora": failed_corpora,
+        }
         self._log(f"Corpora extraction summary: {summary['dialogue_counts']}")
+        if failed_corpora:
+            self._log(f"Corpora failed: {failed_corpora}")
         return summary
 
     def _store_corpus(self, codename: str, dialogues: list[dict[str, Any]]) -> int:

@@ -24,5 +24,6 @@ def run_setup():
             "initialized": True,
             "corpora": result.get("corpora"),
             "annotations": result.get("annotations"),
+            "warnings": result.get("warnings", []),
         }
     )

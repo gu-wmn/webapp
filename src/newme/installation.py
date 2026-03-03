@@ -33,20 +33,37 @@ def perform_installation(
 
     db.create_all()
 
-    result: dict[str, Any] = {"corpora": None, "annotations": None}
+    emit = logger or (lambda message: current_app.logger.info(message))
+    result: dict[str, Any] = {"corpora": None, "annotations": None, "warnings": []}
+
+    def record_warning(message: str) -> None:
+        result["warnings"].append(message)
+        if logger is None:
+            current_app.logger.warning(message)
+
     if install_corpora:
         try:
             from .corpora import CorpusInstaller
         except ModuleNotFoundError as exc:
             if exc.name == "requests":
-                raise RuntimeError(
-                    "Corpus installation requires 'requests'. Reinstall the package: pip install ."
-                ) from exc
-            raise
-
-        emit = logger or (lambda message: current_app.logger.info(message))
-        installer = CorpusInstaller(current_app.config, logger=emit)
-        result["corpora"] = installer.install()
+                record_warning(
+                    "Corpus installation skipped because dependency 'requests' is unavailable. "
+                    "Reinstall the package: pip install ."
+                )
+            else:
+                record_warning(
+                    f"Corpus installation skipped because the installer could not be loaded: {exc}"
+                )
+        else:
+            try:
+                installer = CorpusInstaller(current_app.config, logger=emit)
+                result["corpora"] = installer.install()
+            except Exception as exc:
+                # Continue setup when corpus download/extraction fails.
+                record_warning(
+                    f"Corpus installation failed and was skipped. Setup will continue: {exc}"
+                )
+                current_app.logger.warning("Corpus installation failed during setup: %s", exc)
 
     if install_annotations:
         from .annotations import AnnotationImporter
@@ -56,7 +73,6 @@ def perform_installation(
             raise RuntimeError(
                 "No annotations path configured. Set NEWME_ANNOTATIONS_PATH or provide wmn_annotations.json."
             )
-        emit = logger or (lambda message: current_app.logger.info(message))
         importer = AnnotationImporter(annotations_path=annotations_path, logger=emit)
         result["annotations"] = importer.import_annotations()
 
