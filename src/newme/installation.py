@@ -12,6 +12,11 @@ from .models import (
     Corpus,
     Dialogue,
     Experiment,
+    ExperimentDialogue,
+    Prompt,
+    Run,
+    RunResult,
+    UserSettings,
     Utterance,
 )
 
@@ -25,7 +30,7 @@ def perform_installation(
     logger: LoggerFn | None = None,
 ) -> dict[str, Any]:
     # Ensure SQLAlchemy metadata includes all tables before create_all().
-    _ = (Corpus, Dialogue, Utterance, AnnotationSequence, AnnotationLabel, Experiment)
+    _ = (Corpus, Dialogue, Utterance, AnnotationSequence, AnnotationLabel, Experiment, ExperimentDialogue, Prompt, Run, RunResult, UserSettings)
 
     if install_corpora is None:
         install_corpora = bool(current_app.config.get("INSTALL_CORPORA_ON_SETUP", True))

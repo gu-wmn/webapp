@@ -1,0 +1,164 @@
+{% extends "portal/base.html" %}
+{% block title %}New Prompt — {{ experiment.name }}{% endblock %}
+
+{% block content %}
+<div class="portal-experiment">
+
+  <div class="portal-experiment-header">
+    <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">&larr; {{ experiment.name }}</a>
+    <h1>New Prompt</h1>
+  </div>
+
+  {% if error %}
+  <p class="portal-error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('portal.new_prompt', experiment_id=experiment.id) }}">
+    <div class="prompt-form-grid">
+
+      <div class="prompt-form-left">
+        <div class="form-field">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required autofocus
+            placeholder="e.g. Candidate detection">
+        </div>
+
+        <div class="form-field">
+          <label for="host">Host</label>
+          <select id="host" name="host" required>
+            <option value="" disabled selected>Loading hosts…</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="model">Model</label>
+          <select id="model" name="model" required>
+            <option value="" disabled selected>Select a host first</option>
+          </select>
+          <p id="model-error" class="portal-error" style="display:none"></p>
+        </div>
+
+        <div class="form-field">
+          <label for="output_format">Output format</label>
+          <select id="output_format" name="output_format">
+            <option value="">None (free text)</option>
+            <option value="simplified">Simplified</option>
+            <option value="annotated">Annotated</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="temperature">Temperature <span class="field-hint">(optional)</span></label>
+          <input type="number" id="temperature" name="temperature"
+            min="0" max="2" step="0.05" placeholder="Model default">
+        </div>
+
+        <div class="form-field">
+          <label for="num_ctx">Context window <span class="field-hint">(optional)</span></label>
+          <input type="number" id="num_ctx" name="num_ctx"
+            min="512" step="512" placeholder="Model default">
+        </div>
+      </div>
+
+      <div class="prompt-form-right">
+        <div class="form-field">
+          <label for="system_prompt">System prompt <span class="field-hint">(optional)</span></label>
+          <textarea id="system_prompt" name="system_prompt" rows="4"
+            placeholder="You are a linguistics researcher..."></textarea>
+        </div>
+
+        <div class="form-field">
+          <label for="prompt_text">Prompt template</label>
+          <textarea id="prompt_text" name="prompt_text" rows="10" required
+            placeholder="Use {dialogue} to insert the dialogue text."></textarea>
+          <p class="exp-hint">Available placeholders: <code>{dialogue}</code></p>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="exp-actions" style="margin-top: 1.25rem">
+      <button type="submit">Add prompt</button>
+      <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const hostSelect = document.getElementById("host");
+  const modelSelect = document.getElementById("model");
+  const modelError = document.getElementById("model-error");
+
+  function setSelectState(select, message) {
+    select.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = ""; opt.disabled = true; opt.selected = true;
+    opt.textContent = message;
+    select.appendChild(opt);
+  }
+
+  function loadModels(hostUrl) {
+    setSelectState(modelSelect, "Loading models…");
+    modelError.style.display = "none";
+
+    fetch(`{{ url_for('portal.api_models') }}?host=${encodeURIComponent(hostUrl)}`)
+      .then(r => r.json())
+      .then(data => {
+        modelSelect.innerHTML = "";
+        if (data.error) {
+          modelError.textContent = `${data.url}: ${data.error}`;
+          modelError.style.display = "";
+          setSelectState(modelSelect, "Ollama unreachable");
+        } else if (data.models.length === 0) {
+          modelError.textContent = `Connected to ${data.url} but no models are installed.`;
+          modelError.style.display = "";
+          setSelectState(modelSelect, "No models found");
+        } else {
+          setSelectState(modelSelect, "Select a model");
+          data.models.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m; opt.textContent = m;
+            modelSelect.appendChild(opt);
+          });
+        }
+      })
+      .catch(err => {
+        modelError.textContent = `Request failed: ${err}`;
+        modelError.style.display = "";
+        setSelectState(modelSelect, "Error loading models");
+      });
+  }
+
+  fetch("{{ url_for('portal.api_hosts') }}")
+    .then(r => r.json())
+    .then(data => {
+      hostSelect.innerHTML = "";
+      if (!data.hosts || data.hosts.length === 0) {
+        setSelectState(hostSelect, "No hosts configured");
+        return;
+      }
+      setSelectState(hostSelect, "Select a host");
+      data.hosts.forEach(h => {
+        const opt = document.createElement("option");
+        opt.value = h.url; opt.textContent = h.label;
+        hostSelect.appendChild(opt);
+      });
+      if (data.hosts.length === 1) {
+        hostSelect.value = data.hosts[0].url;
+        loadModels(data.hosts[0].url);
+      }
+    })
+    .catch(err => {
+      setSelectState(hostSelect, `Error loading hosts: ${err}`);
+    });
+
+  hostSelect.addEventListener("change", () => {
+    if (hostSelect.value) loadModels(hostSelect.value);
+  });
+})();
+</script>
+{% endblock %}

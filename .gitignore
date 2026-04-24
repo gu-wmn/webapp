@@ -5,3 +5,4 @@ build/
 corpora/
 **.sqlite3
 dist/
+.env

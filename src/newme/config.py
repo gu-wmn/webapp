@@ -37,3 +37,5 @@ class Config:
     CORPORA_TIMEOUT_SECONDS = int(os.getenv("NEWME_CORPORA_TIMEOUT_SECONDS", "120"))
     CORPORA_FORCE_REDOWNLOAD = _env_bool("NEWME_CORPORA_FORCE_REDOWNLOAD", False)
     USERS = os.getenv("NEWME_USERS", "")
+    OLLAMA_HOSTS = os.getenv("OLLAMA_HOSTS", "")
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")

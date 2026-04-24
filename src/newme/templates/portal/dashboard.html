@@ -5,8 +5,39 @@
 <div class="portal-dashboard">
   <div class="portal-dashboard-header">
     <h1>Dashboard</h1>
-    <a href="#" class="button">New Experiment</a>
+    <a href="{{ url_for('portal.new_experiment') }}" class="button">New Experiment</a>
   </div>
+
+  <details class="settings-panel">
+    <summary>Settings</summary>
+    <form method="post" action="{{ url_for('portal.save_settings') }}" class="settings-form">
+
+      <div class="form-field">
+        <label for="global_template">Global prompt template
+          <span class="field-hint">— prepended to every prompt</span>
+        </label>
+        <textarea id="global_template" name="global_template" rows="4"
+          placeholder="You are a linguist specialising in conversation analysis...">{{ (user_settings.global_template if user_settings and user_settings.global_template) or '' }}</textarea>
+      </div>
+
+      <div class="settings-appendix-grid">
+        <div class="form-field">
+          <label for="simplified_appendix">Simplified output appendix</label>
+          <textarea id="simplified_appendix" name="simplified_appendix" rows="8"
+            placeholder="{{ simplified_appendix_default }}">{{ (user_settings.simplified_appendix if user_settings and user_settings.simplified_appendix) or '' }}</textarea>
+          <p class="exp-hint">Leave blank to use the default.</p>
+        </div>
+        <div class="form-field">
+          <label for="annotated_appendix">Annotated output appendix</label>
+          <textarea id="annotated_appendix" name="annotated_appendix" rows="8"
+            placeholder="{{ annotated_appendix_default }}">{{ (user_settings.annotated_appendix if user_settings and user_settings.annotated_appendix) or '' }}</textarea>
+          <p class="exp-hint">Leave blank to use the default.</p>
+        </div>
+      </div>
+
+      <button type="submit">Save settings</button>
+    </form>
+  </details>
 
   {% if experiments %}
   <ul class="experiment-list">

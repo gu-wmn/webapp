@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+import json
+import threading
+from datetime import datetime, timezone
+
+
+def format_dialogue(utterances) -> str:
+    return "\n".join(f"[{u.position}] {u.author}: {u.text}" for u in utterances)
+
+
+def assemble_prompt_text(prompt, dialogue_text: str, previous_output: str, user_settings) -> str:
+    parts = []
+
+    if user_settings and user_settings.global_template:
+        parts.append(user_settings.global_template.strip())
+
+    parts.append(prompt.prompt_text.strip())
+
+    text = "\n\n".join(p for p in parts if p)
+    text = text.replace("{dialogue}", dialogue_text)
+    text = text.replace("{previous_output}", previous_output)
+
+    if prompt.output_format == "simplified":
+        appendix = (
+            user_settings.effective_simplified_appendix
+            if user_settings
+            else _simplified_default()
+        )
+    elif prompt.output_format == "annotated":
+        appendix = (
+            user_settings.effective_annotated_appendix
+            if user_settings
+            else _annotated_default()
+        )
+    else:
+        appendix = ""
+
+    if appendix:
+        text = text + "\n\n" + appendix.strip()
+
+    return text
+
+
+def _simplified_default() -> str:
+    from .models.experiment import SIMPLIFIED_APPENDIX_DEFAULT
+    return SIMPLIFIED_APPENDIX_DEFAULT
+
+
+def _annotated_default() -> str:
+    from .models.experiment import ANNOTATED_APPENDIX_DEFAULT
+    return ANNOTATED_APPENDIX_DEFAULT
+
+
+def _get_output_schema(output_format: str) -> dict | None:
+    if output_format == "simplified":
+        return {
+            "type": "object",
+            "properties": {
+                "hits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "dialogue_id": {"type": "string"},
+                            "start_index": {"type": "integer"},
+                            "end_index": {"type": "integer"},
+                            "label": {"type": "string"},
+                        },
+                        "required": ["dialogue_id", "start_index", "end_index", "label"],
+                    },
+                }
+            },
+            "required": ["hits"],
+        }
+    if output_format == "annotated":
+        return {
+            "type": "object",
+            "properties": {
+                "hits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "dialogue_id": {"type": "string"},
+                            "start_index": {"type": "integer"},
+                            "end_index": {"type": "integer"},
+                            "start_offset": {"type": "integer"},
+                            "end_offset": {"type": "integer"},
+                            "label": {"type": "string"},
+                            "excerpt": {"type": "string"},
+                        },
+                        "required": [
+                            "dialogue_id", "start_index", "end_index",
+                            "start_offset", "end_offset", "label", "excerpt",
+                        ],
+                    },
+                }
+            },
+            "required": ["hits"],
+        }
+    return None
+
+
+def _get_previous_output(prompt, dialogue_external_id: str) -> str:
+    from .models.experiment import Prompt, Run, RunResult
+
+    if prompt.position <= 1:
+        return ""
+
+    prev_prompt = Prompt.query.filter_by(
+        experiment_id=prompt.experiment_id,
+        position=prompt.position - 1,
+    ).first()
+    if not prev_prompt:
+        return ""
+
+    prev_run = (
+        Run.query.filter_by(
+            experiment_id=prompt.experiment_id,
+            prompt_id=prev_prompt.id,
+            status="complete",
+        )
+        .order_by(Run.completed_at.desc())
+        .first()
+    )
+    if not prev_run:
+        return ""
+
+    prev_result = RunResult.query.filter_by(
+        run_id=prev_run.id,
+        dialogue_external_id=dialogue_external_id,
+    ).first()
+
+    if not prev_result or prev_result.output is None:
+        return ""
+
+    return json.dumps(prev_result.output)
+
+
+def execute_run(run_id: int, app) -> None:
+    thread = threading.Thread(target=_run_worker, args=(run_id, app), daemon=True)
+    thread.start()
+
+
+def _run_worker(run_id: int, app) -> None:
+    with app.app_context():
+        from .extensions import db
+        from .models import Corpus, Dialogue, Utterance
+        from .models.experiment import ExperimentDialogue, Prompt, Run, RunResult, UserSettings
+        from .ollama_client import get_client
+
+        run = db.session.get(Run, run_id)
+        if not run:
+            return
+
+        run.status = "running"
+        run.started_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+        try:
+            prompt = db.session.get(Prompt, run.prompt_id)
+            experiment = prompt.experiment
+            user_settings = db.session.get(UserSettings, experiment.user_email)
+
+            dialogues = ExperimentDialogue.query.filter_by(experiment_id=experiment.id).all()
+            run.total_count = len(dialogues)
+            db.session.commit()
+
+            client = get_client(prompt.host or "http://127.0.0.1:11434")
+            schema = _get_output_schema(prompt.output_format)
+
+            for exp_dialogue in dialogues:
+                output = None
+                raw_response = None
+                error_msg = None
+
+                try:
+                    dialogue_obj = (
+                        db.session.query(Dialogue)
+                        .join(Corpus, Dialogue.corpus_id == Corpus.id)
+                        .filter(
+                            Corpus.codename == exp_dialogue.corpus_codename,
+                            Dialogue.external_id == exp_dialogue.dialogue_external_id,
+                        )
+                        .first()
+                    )
+                    if dialogue_obj is None:
+                        raise ValueError(
+                            f"Dialogue {exp_dialogue.dialogue_external_id!r} not found in database"
+                        )
+
+                    utterances = (
+                        Utterance.query.filter_by(dialogue_id=dialogue_obj.id)
+                        .order_by(Utterance.position.asc())
+                        .all()
+                    )
+
+                    dialogue_text = format_dialogue(utterances)
+                    previous_output = _get_previous_output(prompt, exp_dialogue.dialogue_external_id)
+                    prompt_text = assemble_prompt_text(prompt, dialogue_text, previous_output, user_settings)
+
+                    chat_kwargs: dict = {
+                        "model": prompt.model,
+                        "messages": [{"role": "user", "content": prompt_text}],
+                    }
+                    options: dict = {}
+                    if prompt.temperature is not None:
+                        options["temperature"] = prompt.temperature
+                    if prompt.num_ctx is not None:
+                        options["num_ctx"] = prompt.num_ctx
+                    if options:
+                        chat_kwargs["options"] = options
+                    if schema:
+                        chat_kwargs["format"] = schema
+
+                    response = client.chat(**chat_kwargs)
+                    raw_response = response.message.content
+
+                    if schema:
+                        parsed = json.loads(raw_response)
+                        hits = parsed.get("hits", [])
+                        if prompt.output_format == "simplified" and hits:
+                            utt_map = {u.position: f"[{u.position}] {u.author}: {u.text}" for u in utterances}
+                            for hit in hits:
+                                start = hit.get("start_index")
+                                end = hit.get("end_index")
+                                if start is not None:
+                                    end = end if end is not None else start
+                                    texts = [utt_map[i] for i in range(start, end + 1) if i in utt_map]
+                                    hit["excerpt"] = "\n".join(texts)
+                        output = hits
+                    else:
+                        output = raw_response
+
+                except Exception as exc:
+                    error_msg = str(exc)
+
+                db.session.add(RunResult(
+                    run_id=run.id,
+                    dialogue_external_id=exp_dialogue.dialogue_external_id,
+                    corpus_codename=exp_dialogue.corpus_codename,
+                    output=output,
+                    raw_response=raw_response,
+                    error=error_msg,
+                ))
+                run.processed_count += 1
+                db.session.commit()
+
+            run.status = "complete"
+            run.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+
+        except Exception as exc:
+            run = db.session.get(Run, run_id)
+            if run:
+                run.status = "error"
+                run.error_message = str(exc)
+                run.completed_at = datetime.now(timezone.utc)
+                db.session.commit()

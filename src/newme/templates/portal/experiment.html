@@ -3,9 +3,249 @@
 
 {% block content %}
 <div class="portal-experiment">
+
   <div class="portal-experiment-header">
     <a href="{{ url_for('portal.dashboard') }}">&larr; Dashboard</a>
     <h1>{{ experiment.name }}</h1>
   </div>
+
+  {# ── Prompt chain ─────────────────────────────────────────────── #}
+  <section class="exp-section">
+    <div class="exp-section-header">
+      <h2>Prompt chain</h2>
+      <a href="{{ url_for('portal.new_prompt', experiment_id=experiment.id) }}" class="button">Add prompt</a>
+    </div>
+
+    {% if experiment.prompts %}
+    <ol class="prompt-chain">
+      {% for prompt in experiment.prompts %}
+      {% set latest_run = latest_runs.get(prompt.id) %}
+      <li class="prompt-item" id="prompt-{{ prompt.id }}">
+        <div class="prompt-item-header">
+          <span class="prompt-name">{{ prompt.name }}</span>
+          <span class="prompt-model">{{ prompt.model }}</span>
+          {% if prompt.host %}<span class="prompt-model">{{ prompt.host }}</span>{% endif %}
+          {% if prompt.output_format %}<span class="prompt-format-badge">{{ prompt.output_format }}</span>{% endif %}
+          <a href="{{ url_for('portal.edit_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+            class="button-secondary-sm" style="margin-left:auto">Edit</a>
+          <form method="post" action="{{ url_for('portal.delete_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+            onsubmit="return confirm('Delete this prompt?')">
+            <button type="submit" class="button-danger-sm">Delete</button>
+          </form>
+        </div>
+
+        <div class="prompt-meta">
+          {% if prompt.temperature is not none %}<span>temp {{ prompt.temperature }}</span>{% endif %}
+          {% if prompt.num_ctx %}<span>ctx {{ prompt.num_ctx }}</span>{% endif %}
+        </div>
+
+        {% if prompt.system_prompt %}
+        <pre class="prompt-preview prompt-system">{{ prompt.system_prompt }}</pre>
+        {% endif %}
+        <pre class="prompt-preview">{{ prompt.prompt_text }}</pre>
+
+        {# ── Run controls ── #}
+        <div class="run-section">
+          {% if latest_run %}
+            {% if latest_run.status == "running" or latest_run.status == "pending" %}
+            <div class="run-progress" data-run-id="{{ latest_run.id }}" data-experiment-id="{{ experiment.id }}">
+              <span class="run-status-badge run-running">Running</span>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width:{{ ((latest_run.processed_count / latest_run.total_count * 100) if latest_run.total_count else 0)|int }}%"></div>
+              </div>
+              <span class="run-progress-label">
+                {{ latest_run.processed_count }} / {{ latest_run.total_count }}
+              </span>
+            </div>
+            {% elif latest_run.status == "complete" %}
+            <span class="run-status-badge run-complete">Complete</span>
+            <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+              class="button-secondary">View results</a>
+            {% elif latest_run.status == "error" %}
+            <span class="run-status-badge run-error">Error</span>
+            <span class="run-meta run-error-msg" title="{{ latest_run.error_message }}">
+              {{ (latest_run.error_message or '')[:80] }}{% if (latest_run.error_message or '')|length > 80 %}…{% endif %}
+            </span>
+            {% endif %}
+          {% endif %}
+
+          {% if not active_run or (latest_run and (latest_run.status == "running" or latest_run.status == "pending")) %}
+          {# show disabled run button when this prompt is the active one #}
+          {% endif %}
+
+          <button class="run-btn"
+            data-experiment-id="{{ experiment.id }}"
+            data-prompt-id="{{ prompt.id }}"
+            {% if active_run %}disabled{% endif %}>
+            {% if latest_run and latest_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
+          </button>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="portal-empty">No prompts yet. Add the first one to build the chain.</p>
+    {% endif %}
+  </section>
+
+  {# ── Dialogue sample ───────────────────────────────────────────── #}
+  <section class="exp-section">
+    <h2>Dialogue sample</h2>
+    <form method="post" action="{{ url_for('portal.configure_experiment', experiment_id=experiment.id) }}">
+
+      <div class="exp-config-grid">
+        <fieldset class="exp-fieldset">
+          <legend>Corpus</legend>
+          {% for corpus in corpora %}
+          <label class="exp-check">
+            <input type="checkbox" name="corpus" value="{{ corpus.codename }}"
+              {% if not experiment.corpus_filter or corpus.codename in experiment.corpus_filter %}checked{% endif %}>
+            {{ corpus.fullname }}
+          </label>
+          {% endfor %}
+          <p class="exp-hint">Leave all checked to include all corpora.</p>
+        </fieldset>
+
+        <fieldset class="exp-fieldset">
+          <legend>WMN type</legend>
+          {% for value, label in wmn_type_options %}
+          <label class="exp-check">
+            <input type="checkbox" name="wmn_type" value="{{ value }}"
+              {% if value in experiment.wmn_type_filter %}checked{% endif %}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        <div class="exp-fieldset">
+          <div class="form-field">
+            <label for="sample_size">Sample size</label>
+            <input type="number" id="sample_size" name="sample_size" min="1"
+              value="{{ experiment.sample_size or '' }}" placeholder="All">
+          </div>
+          <div class="form-field">
+            <label for="random_seed">Random seed</label>
+            <input type="number" id="random_seed" name="random_seed" required
+              value="{{ experiment.random_seed }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="exp-actions">
+        <button type="submit">Save configuration</button>
+        {% if experiment.dialogues_resolved_at %}
+        <span class="exp-resolved-note">
+          Sample resolved {{ experiment.dialogues_resolved_at.strftime('%Y-%m-%d %H:%M') }} &mdash;
+          {{ experiment.dialogues | length }} dialogue(s). Saving will clear it.
+        </span>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if experiment.dialogues_resolved_at %}
+    <form method="post" action="{{ url_for('portal.resolve_experiment', experiment_id=experiment.id) }}" style="margin-top:0.75rem">
+      <button type="submit" class="button-secondary">Re-resolve sample</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('portal.resolve_experiment', experiment_id=experiment.id) }}" style="margin-top:1rem">
+      <button type="submit">Resolve sample</button>
+    </form>
+    {% endif %}
+  </section>
+
+  {% if experiment.dialogues %}
+  <section class="exp-section">
+    <h2>Dialogues ({{ experiment.dialogues | length }})</h2>
+    <table class="exp-dialogue-table">
+      <thead>
+        <tr><th>Dialogue ID</th><th>Corpus</th></tr>
+      </thead>
+      <tbody>
+        {% for d in experiment.dialogues | sort(attribute='dialogue_external_id') %}
+        <tr>
+          <td>{{ d.dialogue_external_id }}</td>
+          <td>{{ d.corpus_codename }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const POLL_INTERVAL = 2000;
+  let pollTimer = null;
+
+  function lockRunButtons() {
+    document.querySelectorAll(".run-btn").forEach(b => b.disabled = true);
+  }
+
+  function unlockRunButtons() {
+    document.querySelectorAll(".run-btn").forEach(b => b.disabled = false);
+  }
+
+  function updateProgressBar(runId, data) {
+    const container = document.querySelector(`.run-progress[data-run-id="${runId}"]`);
+    if (!container) return;
+    const fill = container.querySelector(".progress-fill");
+    const label = container.querySelector(".run-progress-label");
+    const pct = data.total_count > 0
+      ? Math.round(data.processed_count / data.total_count * 100)
+      : 0;
+    if (fill) fill.style.width = pct + "%";
+    if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
+  }
+
+  function pollRun(runId) {
+    pollTimer = setInterval(() => {
+      fetch(`/api/runs/${runId}/status`)
+        .then(r => r.json())
+        .then(data => {
+          updateProgressBar(runId, data);
+          if (data.status === "complete" || data.status === "error") {
+            clearInterval(pollTimer);
+            window.location.reload();
+          }
+        })
+        .catch(() => clearInterval(pollTimer));
+    }, POLL_INTERVAL);
+  }
+
+  // Start polling for any run already in progress on page load.
+  document.querySelectorAll(".run-progress[data-run-id]").forEach(el => {
+    pollRun(el.dataset.runId);
+  });
+
+  // Wire up run buttons.
+  document.querySelectorAll(".run-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const experimentId = btn.dataset.experimentId;
+      const promptId = btn.dataset.promptId;
+      lockRunButtons();
+
+      fetch(`/experiments/${experimentId}/prompts/${promptId}/run`, { method: "POST" })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+            unlockRunButtons();
+            return;
+          }
+          pollRun(data.run_id);
+          window.location.reload();
+        })
+        .catch(err => {
+          alert(`Failed to start run: ${err}`);
+          unlockRunButtons();
+        });
+    });
+  });
+})();
+</script>
 {% endblock %}

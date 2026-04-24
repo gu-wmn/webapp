@@ -219,6 +219,8 @@ def _update_config_from_runtime_env(app: Flask) -> None:
         _parse_list_value(os.getenv("NEWME_CORPORA_ENABLED")),
     )
     _set_config_if_present(app, "USERS", os.getenv("NEWME_USERS"))
+    _set_config_if_present(app, "OLLAMA_HOSTS", os.getenv("OLLAMA_HOSTS"))
+    _set_config_if_present(app, "OLLAMA_URL", os.getenv("OLLAMA_URL"))
     _set_config_if_present(app, "CORPORA_ANNOTATIONS_PATH", os.getenv("NEWME_CORPORA_ANNOTATIONS_PATH"))
     _set_config_if_present(
         app,
