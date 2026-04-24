@@ -10,9 +10,5 @@ services:
       NEWME_DATA_PATH: /data
       SECRET_KEY: ${SECRET_KEY:-change-me}
     volumes:
-      - newme_data:/data
-      - ./corpora:/data/corpora
+      - ./data:/data
     restart: unless-stopped
-
-volumes:
-  newme_data:
