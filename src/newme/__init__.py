@@ -64,8 +64,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             logger=click.echo,
         )
         corpora_result = result.get("corpora")
-        if isinstance(corpora_result, dict) and "dialogue_counts" in corpora_result:
-            click.echo(f"Corpora stored: {corpora_result['dialogue_counts']}")
+        if isinstance(corpora_result, dict):
+            if "dialogue_counts" in corpora_result:
+                click.echo(f"Corpora stored: {corpora_result['dialogue_counts']}")
+            failed_corpora = corpora_result.get("failed_corpora", {})
+            if failed_corpora:
+                click.echo(f"Corpora failed: {failed_corpora}")
         if result.get("annotations"):
             click.echo(
                 "Annotations stored: "

@@ -4,8 +4,9 @@ import hashlib
 import json
 import re
 import zipfile
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 import xml.etree.ElementTree as ET
 
 import requests
@@ -84,8 +85,11 @@ class CorpusInstaller:
                 self._log(f"Stored {count} dialogues for {codename}.")
             except Exception as exc:
                 db.session.rollback()
-                failed_corpora[codename] = str(exc)
-                self._log(f"Failed corpus '{codename}', continuing with next: {exc}")
+                failed_corpora[codename] = self._describe_error(exc)
+                self._log(
+                    f"Failed corpus '{codename}', continuing with next: "
+                    f"{self._describe_error(exc)}"
+                )
 
         self._write_extracted_corpora_json(extracted_corpora)
 
@@ -120,6 +124,29 @@ class CorpusInstaller:
         except OSError as exc:
             self._log(f"Failed to save extracted corpora JSON: {exc}")
 
+    def _describe_error(self, exc: Exception) -> str:
+        message = str(exc)
+        if message:
+            return f"{exc.__class__.__name__}: {message}"
+        return exc.__class__.__name__
+
+    def _coerce_text_value(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        corpus: str,
+        dialogue_id: str,
+    ) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        raise ValueError(
+            f"Dialogue '{dialogue_id}' in corpus '{corpus}' has non-string "
+            f"{field_name!r}: {value!r}"
+        )
+
     def _store_corpus(self, codename: str, dialogues: list[dict[str, Any]]) -> int:
         corpus_def = self._corpora[codename]
         corpus = Corpus.query.filter_by(codename=codename).one_or_none()
@@ -136,36 +163,73 @@ class CorpusInstaller:
 
         self._delete_existing_corpus_data(corpus.id)
 
+        stored_dialogues = 0
         for dialogue_data in dialogues:
+            if not isinstance(dialogue_data, Mapping):
+                self._log(f"Skipping malformed dialogue payload in corpus {codename}: {dialogue_data!r}")
+                continue
+
             dialogue_external_id = dialogue_data.get("id")
             if dialogue_external_id is None:
+                self._log(f"Skipping dialogue without id in corpus {codename}: {dialogue_data!r}")
                 continue
-            dialogue = Dialogue(
-                corpus_id=corpus.id,
-                external_id=str(dialogue_external_id),
-            )
-            db.session.add(dialogue)
-            db.session.flush()
+            dialogue_id = str(dialogue_external_id)
 
-            utterance_rows = []
-            for position, utterance in enumerate(dialogue_data.get("utterances", [])):
-                external_id = utterance.get("id")
-                reply_to = utterance.get("reply_to")
-                utterance_rows.append(
-                    Utterance(
-                        dialogue_id=dialogue.id,
-                        position=position,
-                        external_id=str(external_id) if external_id is not None else None,
-                        author=str(utterance.get("author") or ""),
-                        text=str(utterance.get("text") or ""),
-                        reply_to_external_id=str(reply_to) if reply_to is not None else None,
+            try:
+                with db.session.begin_nested():
+                    dialogue = Dialogue(
+                        corpus_id=corpus.id,
+                        external_id=dialogue_id,
                     )
+                    db.session.add(dialogue)
+                    db.session.flush()
+
+                    utterances = dialogue_data.get("utterances", [])
+                    if not isinstance(utterances, list):
+                        raise ValueError(
+                            f"Dialogue '{dialogue_id}' in corpus '{codename}' has invalid utterances"
+                        )
+
+                    utterance_rows = []
+                    for position, utterance in enumerate(utterances):
+                        if not isinstance(utterance, Mapping):
+                            raise ValueError(
+                                f"Dialogue '{dialogue_id}' in corpus '{codename}' has malformed "
+                                f"utterance at position {position}"
+                            )
+                        external_id = utterance.get("id")
+                        reply_to = utterance.get("reply_to")
+                        utterance_rows.append(
+                            Utterance(
+                                dialogue_id=dialogue.id,
+                                position=position,
+                                external_id=str(external_id) if external_id is not None else None,
+                                author=self._coerce_text_value(
+                                    utterance.get("author"),
+                                    field_name="author",
+                                    corpus=codename,
+                                    dialogue_id=dialogue_id,
+                                ),
+                                text=self._coerce_text_value(
+                                    utterance.get("text"),
+                                    field_name="text",
+                                    corpus=codename,
+                                    dialogue_id=dialogue_id,
+                                ),
+                                reply_to_external_id=str(reply_to) if reply_to is not None else None,
+                            )
+                        )
+                    if utterance_rows:
+                        db.session.add_all(utterance_rows)
+                stored_dialogues += 1
+            except Exception as exc:
+                self._log(
+                    f"Skipping dialogue {dialogue_id} in corpus {codename} after store failure: "
+                    f"{self._describe_error(exc)}"
                 )
-            if utterance_rows:
-                db.session.add_all(utterance_rows)
 
         db.session.commit()
-        return len(dialogues)
+        return stored_dialogues
 
     def _delete_existing_corpus_data(self, corpus_id: int) -> None:
         dialogue_ids = select(Dialogue.id).where(Dialogue.corpus_id == corpus_id)
@@ -282,21 +346,55 @@ class CorpusInstaller:
         )
 
         conversations: dict[str, list[dict[str, Any]]] = {}
+        failed_conversations: set[str] = set()
         with utterance_file.open(encoding="utf-8") as file_obj:
-            for line in file_obj:
-                utterance = json.loads(line)
+            for line_number, line in enumerate(file_obj, start=1):
+                try:
+                    utterance = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    self._log(
+                        f"Skipping malformed Switchboard row {line_number}: "
+                        f"{self._describe_error(exc)}"
+                    )
+                    continue
+                if not isinstance(utterance, Mapping):
+                    self._log(
+                        f"Skipping malformed Switchboard row {line_number}: "
+                        f"expected object, got {type(utterance).__name__}"
+                    )
+                    continue
                 conversation_id = utterance.get("conversation_id")
                 if conversation_id is not None:
                     conversation_id = str(conversation_id)
                 if not conversation_id or not self._is_in_filter(conversation_id):
                     continue
-                conversations.setdefault(conversation_id, []).append(
-                    {
-                        "id": utterance.get("id"),
-                        "text": utterance.get("text", ""),
-                        "author": utterance.get("speaker", ""),
-                    }
-                )
+                if conversation_id in failed_conversations:
+                    continue
+                try:
+                    conversations.setdefault(conversation_id, []).append(
+                        {
+                            "id": utterance.get("id"),
+                            "text": self._coerce_text_value(
+                                utterance.get("text"),
+                                field_name="text",
+                                corpus="switchboard-corpus",
+                                dialogue_id=conversation_id,
+                            ),
+                            "author": self._coerce_text_value(
+                                utterance.get("speaker"),
+                                field_name="author",
+                                corpus="switchboard-corpus",
+                                dialogue_id=conversation_id,
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    failed_conversations.add(conversation_id)
+                    conversations.pop(conversation_id, None)
+                    self._log(
+                        f"Skipping Switchboard dialogue {conversation_id} after row "
+                        f"{line_number} failed: {self._describe_error(exc)}"
+                    )
 
         return [
             {"id": conversation_id, "utterances": utterances}
@@ -315,28 +413,84 @@ class CorpusInstaller:
             conversation_metadata = json.load(conv_file)
 
         conversations: dict[str, list[dict[str, Any]]] = {}
+        failed_conversations: set[str] = set()
         with utterance_file.open(encoding="utf-8") as file_obj:
-            for line in file_obj:
-                utterance = json.loads(line)
+            for line_number, line in enumerate(file_obj, start=1):
+                try:
+                    utterance = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    self._log(
+                        f"Skipping malformed Winning Arguments row {line_number}: "
+                        f"{self._describe_error(exc)}"
+                    )
+                    continue
+                if not isinstance(utterance, Mapping):
+                    self._log(
+                        f"Skipping malformed Winning Arguments row {line_number}: "
+                        f"expected object, got {type(utterance).__name__}"
+                    )
+                    continue
                 root_id = utterance.get("root")
                 if root_id is not None:
                     root_id = str(root_id)
                 if not root_id or not self._is_in_filter(root_id):
                     continue
-                conversations.setdefault(root_id, []).append(
-                    {
-                        "id": utterance.get("id"),
-                        "author": utterance.get("user", ""),
-                        "reply_to": utterance.get("reply-to"),
-                        "text": self._mark_citations(utterance.get("text")),
-                    }
-                )
+                if root_id in failed_conversations:
+                    continue
+                try:
+                    conversations.setdefault(root_id, []).append(
+                        {
+                            "id": utterance.get("id"),
+                            "author": self._coerce_text_value(
+                                utterance.get("user"),
+                                field_name="author",
+                                corpus="winning-args-corpus",
+                                dialogue_id=root_id,
+                            ),
+                            "reply_to": utterance.get("reply-to"),
+                            "text": self._mark_citations(
+                                self._coerce_text_value(
+                                    utterance.get("text"),
+                                    field_name="text",
+                                    corpus="winning-args-corpus",
+                                    dialogue_id=root_id,
+                                )
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    failed_conversations.add(root_id)
+                    conversations.pop(root_id, None)
+                    self._log(
+                        f"Skipping Winning Arguments dialogue {root_id} after row "
+                        f"{line_number} failed: {self._describe_error(exc)}"
+                    )
 
         dialogue_list: list[dict[str, Any]] = []
         for conversation_id, utterances in conversations.items():
-            ordered = self._order_winning_args_utterances(utterances)
-            title = conversation_metadata.get(conversation_id, {}).get("op-title", "")
-            ordered = [{"author": "TITLE", "text": title, "id": conversation_id}] + ordered
+            try:
+                ordered = self._order_winning_args_utterances(utterances)
+                metadata = conversation_metadata.get(conversation_id, {})
+                if metadata is None:
+                    metadata = {}
+                if not isinstance(metadata, Mapping):
+                    raise ValueError(
+                        f"Dialogue '{conversation_id}' in corpus 'winning-args-corpus' "
+                        "has invalid conversation metadata"
+                    )
+                title = self._coerce_text_value(
+                    metadata.get("op-title"),
+                    field_name="title",
+                    corpus="winning-args-corpus",
+                    dialogue_id=conversation_id,
+                )
+                ordered = [{"author": "TITLE", "text": title, "id": conversation_id}] + ordered
+            except Exception as exc:
+                self._log(
+                    f"Skipping Winning Arguments dialogue {conversation_id} after assembly "
+                    f"failed: {self._describe_error(exc)}"
+                )
+                continue
             dialogue_list.append({"id": conversation_id, "utterances": ordered})
 
         return dialogue_list
@@ -389,7 +543,14 @@ class CorpusInstaller:
             dialogue_id = str(xml_path.stem)
             if not self._is_in_filter(dialogue_id):
                 continue
-            utterances = self._parse_bnc_file(xml_path)
+            try:
+                utterances = self._parse_bnc_file(xml_path)
+            except Exception as exc:
+                self._log(
+                    f"Skipping BNC dialogue {dialogue_id} after parse failure: "
+                    f"{self._describe_error(exc)}"
+                )
+                continue
             dialogues.append({"id": dialogue_id, "utterances": utterances})
 
         return dialogues
