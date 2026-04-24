@@ -9,7 +9,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import Config
-from .extensions import db
+from .extensions import db, migrate
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -30,11 +30,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     _configure_data_path_and_db(app)
 
     db.init_app(app)
+    migrate.init_app(app, db)
 
     from .main import bp as main_bp
+    from .portal import bp as portal_bp
     from .setup import bp as setup_bp
 
     app.register_blueprint(main_bp)
+    app.register_blueprint(portal_bp)
     app.register_blueprint(setup_bp)
 
     @app.before_request
@@ -215,6 +218,7 @@ def _update_config_from_runtime_env(app: Flask) -> None:
         "CORPORA_ENABLED",
         _parse_list_value(os.getenv("NEWME_CORPORA_ENABLED")),
     )
+    _set_config_if_present(app, "USERS", os.getenv("NEWME_USERS"))
     _set_config_if_present(app, "CORPORA_ANNOTATIONS_PATH", os.getenv("NEWME_CORPORA_ANNOTATIONS_PATH"))
     _set_config_if_present(
         app,

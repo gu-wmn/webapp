@@ -11,6 +11,7 @@ from .models import (
     AppState,
     Corpus,
     Dialogue,
+    Experiment,
     Utterance,
 )
 
@@ -23,8 +24,8 @@ def perform_installation(
     install_annotations: bool | None = None,
     logger: LoggerFn | None = None,
 ) -> dict[str, Any]:
-    # Ensure SQLAlchemy metadata includes corpus tables before create_all().
-    _ = (Corpus, Dialogue, Utterance, AnnotationSequence, AnnotationLabel)
+    # Ensure SQLAlchemy metadata includes all tables before create_all().
+    _ = (Corpus, Dialogue, Utterance, AnnotationSequence, AnnotationLabel, Experiment)
 
     if install_corpora is None:
         install_corpora = bool(current_app.config.get("INSTALL_CORPORA_ON_SETUP", True))

@@ -1,0 +1,11 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ experiment.name }}{% endblock %}
+
+{% block content %}
+<div class="portal-experiment">
+  <div class="portal-experiment-header">
+    <a href="{{ url_for('portal.dashboard') }}">&larr; Dashboard</a>
+    <h1>{{ experiment.name }}</h1>
+  </div>
+</div>
+{% endblock %}

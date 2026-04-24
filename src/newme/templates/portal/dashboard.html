@@ -1,0 +1,24 @@
+{% extends "portal/base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="portal-dashboard">
+  <div class="portal-dashboard-header">
+    <h1>Dashboard</h1>
+    <a href="#" class="button">New Experiment</a>
+  </div>
+
+  {% if experiments %}
+  <ul class="experiment-list">
+    {% for exp in experiments %}
+    <li class="experiment-item">
+      <a href="{{ url_for('portal.experiment', experiment_id=exp.id) }}">{{ exp.name }}</a>
+      <span class="experiment-date">{{ exp.created_at.strftime('%Y-%m-%d') }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="portal-empty">No experiments yet. Create one to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}
