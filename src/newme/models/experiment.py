@@ -37,7 +37,7 @@ DETAILED_APPENDIX_DEFAULT = (
 
 DEFAULT_PROMPT_1_NAME = "Indicator detection"
 DEFAULT_PROMPT_1_MODEL = "qwen3:30b"
-DEFAULT_PROMPT_1_HOST = "http://merl.clasp.gu.se"
+DEFAULT_PROMPT_1_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_1_OUTPUT_FORMAT = "simplified"
 DEFAULT_PROMPT_1_TEXT = (
     "An Indicator is an utterance that signals a need to discuss or clarify the "
@@ -53,7 +53,7 @@ DEFAULT_PROMPT_1_TEXT = (
 
 DEFAULT_PROMPT_2_NAME = "WMN validation"
 DEFAULT_PROMPT_2_MODEL = "llama3.3:70b-instruct-q4_K_M"
-DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se"
+DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_2_OUTPUT_FORMAT = "detailed"
 DEFAULT_PROMPT_2_TEXT = (
     "You are reviewing candidate Indicator utterances to determine whether each "
