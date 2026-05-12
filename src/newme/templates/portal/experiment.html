@@ -79,6 +79,62 @@
     </form>
   </section>
 
+  {# ── Regex pre-filter ─────────────────────────────────────────── #}
+  <section class="exp-section">
+    <div class="exp-section-header">
+      <h2>Regex pre-filter</h2>
+      <div class="exp-section-actions">
+        <a href="{{ url_for('portal.edit_regex', experiment_id=experiment.id) }}" class="button-secondary">Edit patterns</a>
+        <form method="post" action="{{ url_for('portal.toggle_regex', experiment_id=experiment.id) }}">
+          <button type="submit" class="{% if experiment.regex_enabled %}button-secondary{% else %}button{% endif %}">
+            {% if experiment.regex_enabled %}Disable{% else %}Enable{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+    <p class="exp-hint">
+      {% if experiment.regex_enabled %}
+        Enabled &mdash; {% if experiment.regex_patterns %}custom patterns{% else %}using default patterns{% endif %}.
+      {% else %}
+        Disabled &mdash; enable to run a regex pass before the LLM chain.
+      {% endif %}
+    </p>
+
+    {% if experiment.regex_enabled %}
+    <div class="run-section">
+      {% if latest_regex_run %}
+        {% if latest_regex_run.status in ("running", "pending") %}
+        <div class="run-progress" data-regex-run-id="{{ latest_regex_run.id }}">
+          <span class="run-status-badge run-running">Running</span>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:{{ ((latest_regex_run.processed_count / latest_regex_run.total_count * 100) if latest_regex_run.total_count else 0)|int }}%"></div>
+          </div>
+          <span class="run-progress-label">
+            {{ latest_regex_run.processed_count }} / {{ latest_regex_run.total_count }}
+          </span>
+        </div>
+        {% elif latest_regex_run.status == "complete" %}
+        <span class="run-status-badge run-complete">Complete</span>
+        <span class="run-meta">{{ latest_regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <a href="{{ url_for('portal.regex_run_results', experiment_id=experiment.id) }}"
+          class="button-secondary">View results</a>
+        {% elif latest_regex_run.status == "error" %}
+        <span class="run-status-badge run-error">Error</span>
+        <span class="run-meta run-error-msg" title="{{ latest_regex_run.error_message }}">
+          {{ (latest_regex_run.error_message or '')[:80] }}{% if (latest_regex_run.error_message or '')|length > 80 %}…{% endif %}
+        </span>
+        {% endif %}
+      {% endif %}
+
+      <button class="regex-run-btn"
+        data-experiment-id="{{ experiment.id }}"
+        {% if active_run or active_regex_run %}disabled{% endif %}>
+        {% if latest_regex_run and latest_regex_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
+      </button>
+    </div>
+    {% endif %}
+  </section>
+
   {# ── Prompt chain ─────────────────────────────────────────────── #}
   <section class="exp-section">
     <div class="exp-section-header">
@@ -149,7 +205,7 @@
           <button class="run-btn"
             data-experiment-id="{{ experiment.id }}"
             data-prompt-id="{{ prompt.id }}"
-            {% if active_run %}disabled{% endif %}>
+            {% if active_run or active_regex_run %}disabled{% endif %}>
             {% if latest_run and latest_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
           </button>
         </div>
@@ -171,16 +227,14 @@
   let pollTimer = null;
 
   function lockRunButtons() {
-    document.querySelectorAll(".run-btn").forEach(b => b.disabled = true);
+    document.querySelectorAll(".run-btn, .regex-run-btn").forEach(b => b.disabled = true);
   }
 
   function unlockRunButtons() {
-    document.querySelectorAll(".run-btn").forEach(b => b.disabled = false);
+    document.querySelectorAll(".run-btn, .regex-run-btn").forEach(b => b.disabled = false);
   }
 
-  function updateProgressBar(runId, data) {
-    const container = document.querySelector(`.run-progress[data-run-id="${runId}"]`);
-    if (!container) return;
+  function updateProgressEl(container, data) {
     const fill = container.querySelector(".progress-fill");
     const label = container.querySelector(".run-progress-label");
     const pct = data.total_count > 0
@@ -195,7 +249,24 @@
       fetch(`/api/runs/${runId}/status`)
         .then(r => r.json())
         .then(data => {
-          updateProgressBar(runId, data);
+          const container = document.querySelector(`.run-progress[data-run-id="${runId}"]`);
+          if (container) updateProgressEl(container, data);
+          if (data.status === "complete" || data.status === "error") {
+            clearInterval(pollTimer);
+            window.location.reload();
+          }
+        })
+        .catch(() => clearInterval(pollTimer));
+    }, POLL_INTERVAL);
+  }
+
+  function pollRegexRun(runId) {
+    pollTimer = setInterval(() => {
+      fetch(`/api/regex-runs/${runId}/status`)
+        .then(r => r.json())
+        .then(data => {
+          const container = document.querySelector(`.run-progress[data-regex-run-id="${runId}"]`);
+          if (container) updateProgressEl(container, data);
           if (data.status === "complete" || data.status === "error") {
             clearInterval(pollTimer);
             window.location.reload();
@@ -209,8 +280,11 @@
   document.querySelectorAll(".run-progress[data-run-id]").forEach(el => {
     pollRun(el.dataset.runId);
   });
+  document.querySelectorAll(".run-progress[data-regex-run-id]").forEach(el => {
+    pollRegexRun(el.dataset.regexRunId);
+  });
 
-  // Wire up run buttons.
+  // Wire up LLM run buttons.
   document.querySelectorAll(".run-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const experimentId = btn.dataset.experimentId;
@@ -230,6 +304,30 @@
         })
         .catch(err => {
           alert(`Failed to start run: ${err}`);
+          unlockRunButtons();
+        });
+    });
+  });
+
+  // Wire up regex run button.
+  document.querySelectorAll(".regex-run-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const experimentId = btn.dataset.experimentId;
+      lockRunButtons();
+
+      fetch(`/experiments/${experimentId}/regex/run`, { method: "POST" })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+            unlockRunButtons();
+            return;
+          }
+          pollRegexRun(data.run_id);
+          window.location.reload();
+        })
+        .catch(err => {
+          alert(`Failed to start regex run: ${err}`);
           unlockRunButtons();
         });
     });

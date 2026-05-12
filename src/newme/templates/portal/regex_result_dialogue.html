@@ -1,17 +1,17 @@
 {% extends "portal/base.html" %}
-{% block title %}{{ result.dialogue_external_id }} — {{ prompt.name }}{% endblock %}
+{% block title %}{{ result.dialogue_external_id }} — Regex{% endblock %}
 
 {% block content %}
 <div class="portal-experiment">
   <div class="portal-experiment-header">
-    <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}">&larr; {{ prompt.name }} results</a>
+    <a href="{{ url_for('portal.regex_run_results', experiment_id=experiment.id) }}">&larr; Regex results</a>
     <h1>{{ result.dialogue_external_id }}</h1>
   </div>
 
   <div class="meta-block">
     <p><b>Corpus:</b> {{ result.corpus_codename }}</p>
-    <p><b>Run completed:</b> {{ run.completed_at.strftime('%Y-%m-%d %H:%M') }}</p>
-    <p><b>LLM hits:</b> {{ llm_hit_count }}</p>
+    <p><b>Run completed:</b> {{ regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <p><b>Regex hits:</b> {{ llm_hit_count }}</p>
     <p><b>Human WMNs:</b> {{ human_sequences | length }}</p>
   </div>
 
@@ -26,7 +26,7 @@
     <section class="panel portal-results-column">
       <div class="portal-column-above">
         <div class="panel-header-row">
-          <h2>LLM result</h2>
+          <h2>Regex result</h2>
         </div>
 
         {% if result.error %}
@@ -34,8 +34,6 @@
           <p><strong>Run error</strong></p>
           <p>{{ result.error }}</p>
         </div>
-        {% elif result.output is string %}
-        <pre class="prompt-preview">{{ result.output }}</pre>
         {% elif not llm_labels %}
         <p class="portal-empty">No hits.</p>
         {% endif %}
@@ -43,7 +41,7 @@
         {% if llm_label_links %}
         <div class="label-chip-row">
           {% for label in llm_label_links %}
-          <a class="tag {{ label.name }}{% if label.faulty %} faulty-chip{% endif %}" href="#{{ label.anchor_id }}" {% if label.faulty %}title="Faulty: excerpt does not match the indexed utterance"{% endif %}>{% if label.faulty %}<span class="faulty-icon" aria-label="faulty">&#9888;</span> {% endif %}{{ label.name }}{% if label.wmn_type %} <span class="chip-wmn-type">({{ label.wmn_type }})</span>{% endif %}: {{ label.excerpt[:30] }}{% if label.excerpt|length > 30 %}...{% endif %}</a>
+          <a class="tag {{ label.name }}" href="#{{ label.anchor_id }}">{{ label.name }}: {{ label.excerpt[:30] }}{% if label.excerpt|length > 30 %}...{% endif %}</a>
           {% endfor %}
         </div>
         {% endif %}
@@ -72,7 +70,7 @@
           {% for sequence in human_sequences %}
           <a
             class="wmn-tab {% if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id %}selected{% endif %}"
-            href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, wmn_id=sequence.wmn_id) }}"
+            href="{{ url_for('portal.regex_run_result_dialogue', experiment_id=experiment.id, result_id=result.id, wmn_id=sequence.wmn_id) }}"
             role="tab"
             aria-selected="{{ 'true' if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id else 'false' }}"
           >{{ sequence.wmn_id }}</a>

@@ -17,6 +17,10 @@
     <li class="experiment-item">
       <a href="{{ url_for('portal.experiment', experiment_id=exp.id) }}">{{ exp.name }}</a>
       <span class="experiment-date">{{ exp.created_at.strftime('%Y-%m-%d') }}</span>
+      <form method="post" action="{{ url_for('portal.delete_experiment', experiment_id=exp.id) }}"
+        onsubmit="return confirm('Delete experiment “{{ exp.name }}” and all its data?')">
+        <button type="submit" class="button-danger-sm">Delete</button>
+      </form>
     </li>
     {% endfor %}
   </ul>

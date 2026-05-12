@@ -24,6 +24,15 @@
         </div>
 
         <div class="form-field">
+          <label for="output_format">Output format</label>
+          <select id="output_format" name="output_format">
+            <option value="" {% if not prompt.output_format or prompt.output_format == 'regex' %}selected{% endif %}>None (free text)</option>
+            <option value="simplified" {% if prompt.output_format == "simplified" %}selected{% endif %}>Simplified</option>
+            <option value="annotated" {% if prompt.output_format == "annotated" %}selected{% endif %}>Annotated</option>
+          </select>
+        </div>
+
+        <div class="form-field">
           <label for="host">Host</label>
           <select id="host" name="host" required>
             <option value="" disabled selected>Loading hosts…</option>
@@ -36,15 +45,6 @@
             <option value="" disabled selected>Select a host first</option>
           </select>
           <p id="model-error" class="portal-error" style="display:none"></p>
-        </div>
-
-        <div class="form-field">
-          <label for="output_format">Output format</label>
-          <select id="output_format" name="output_format">
-            <option value="" {% if not prompt.output_format %}selected{% endif %}>None (free text)</option>
-            <option value="simplified" {% if prompt.output_format == "simplified" %}selected{% endif %}>Simplified</option>
-            <option value="annotated" {% if prompt.output_format == "annotated" %}selected{% endif %}>Annotated</option>
-          </select>
         </div>
 
         <div class="form-field">
@@ -71,9 +71,9 @@
 
         <div class="form-field">
           <label for="prompt_text">Prompt template</label>
-          <textarea id="prompt_text" name="prompt_text" rows="10" required
+          <textarea id="prompt_text" name="prompt_text" rows="12" required
             placeholder="Use {dialogue} to insert the dialogue text.">{{ prompt.prompt_text }}</textarea>
-          <p class="exp-hint">Available placeholders: <code>{dialogue}</code></p>
+          <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code></p>
         </div>
       </div>
 

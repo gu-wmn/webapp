@@ -1,16 +1,16 @@
 {% extends "portal/base.html" %}
-{% block title %}Results — {{ prompt.name }}{% endblock %}
+{% block title %}Regex results — {{ experiment.name }}{% endblock %}
 
 {% block content %}
 <div class="portal-experiment">
 
   <div class="portal-experiment-header">
     <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">&larr; {{ experiment.name }}</a>
-    <h1>{{ prompt.name }} — Results</h1>
+    <h1>Regex pre-filter — Results</h1>
   </div>
 
   <p class="results-meta">
-    Run completed {{ run.completed_at.strftime('%Y-%m-%d %H:%M') }} &mdash;
+    Run completed {{ regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }} &mdash;
     {{ results | length }} dialogue(s) &mdash;
     <strong>{{ hit_count }} hit(s)</strong>
   </p>
@@ -63,7 +63,7 @@
     {% for result in results %}
     {% set m = per_result_metrics.get(result.id, {}) %}
     <a class="result-link-card result-item {% if result.error %}result-error{% elif result.output and result.output | length > 0 %}result-hit{% else %}result-empty{% endif %}"
-      href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id) }}">
+      href="{{ url_for('portal.regex_run_result_dialogue', experiment_id=experiment.id, result_id=result.id) }}">
       <div class="result-summary">
         <span class="result-dialogue-id">{{ result.dialogue_external_id }}</span>
         <span class="result-corpus">{{ result.corpus_codename }}</span>
@@ -72,7 +72,7 @@
         {% elif result.output is iterable and result.output is not string %}
           <span class="result-badge result-badge-hits">{{ result.output | length }} hit(s)</span>
         {% else %}
-          <span class="result-badge result-badge-text">Text</span>
+          <span class="result-badge result-badge-text">—</span>
         {% endif %}
         {% if m.human_count is defined and m.human_count > 0 %}
           {% if m.matched > 0 and m.matched == m.human_count %}

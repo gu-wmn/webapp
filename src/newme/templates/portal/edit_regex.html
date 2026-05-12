@@ -1,0 +1,25 @@
+{% extends "portal/base.html" %}
+{% block title %}Regex patterns — {{ experiment.name }}{% endblock %}
+
+{% block content %}
+<div class="portal-experiment">
+
+  <div class="portal-experiment-header">
+    <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">&larr; {{ experiment.name }}</a>
+    <h1>Regex patterns</h1>
+  </div>
+
+  <form method="post" action="{{ url_for('portal.edit_regex', experiment_id=experiment.id) }}">
+    <div class="form-field">
+      <textarea name="regex_patterns" rows="22"
+        class="settings-code-field" style="width:100%">{{ regex_patterns }}</textarea>
+      <pre class="exp-hint" style="white-space:pre-wrap">{{ regex_format_help }}</pre>
+    </div>
+    <div class="exp-actions">
+      <button type="submit">Save patterns</button>
+      <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

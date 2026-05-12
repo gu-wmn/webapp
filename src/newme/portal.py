@@ -11,11 +11,15 @@ from sqlalchemy.orm import selectinload
 from .extensions import db
 from .models.experiment import (
     ANNOTATED_APPENDIX_DEFAULT,
+    REGEX_FORMAT_HELP,
+    REGEX_PATTERNS_DEFAULT,
     SIMPLIFIED_APPENDIX_DEFAULT,
     VALID_WMN_TYPES,
     Experiment,
     ExperimentDialogue,
     Prompt,
+    RegexRun,
+    RegexRunResult,
     Run,
     RunResult,
     UserSettings,
@@ -102,6 +106,7 @@ def _annotate_dialogue_utterances(
             "excerpt": str(label.get("excerpt") or "").strip(),
             "anchor_id": anchor_id,
             "faulty": faulty,
+            "wmn_type": str(label.get("wmn_type") or "").strip(),
         })
 
         add_to_start = 0
@@ -238,6 +243,7 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
                 "end_offset": end_offset,
                 "excerpt": excerpt,
                 "faulty": faulty,
+                "wmn_type": str(hit.get("wmn_type") or "").strip(),
             }
         )
 
@@ -294,9 +300,11 @@ def settings():
     return render_template(
         "portal/settings.html",
         user=user,
-        user_settings=user_settings,
+        us=user_settings,
         simplified_appendix_default=SIMPLIFIED_APPENDIX_DEFAULT,
         annotated_appendix_default=ANNOTATED_APPENDIX_DEFAULT,
+        regex_patterns_default=REGEX_PATTERNS_DEFAULT,
+        regex_format_help=REGEX_FORMAT_HELP,
     )
 
 
@@ -312,6 +320,7 @@ def save_settings():
     user_settings.global_template = (request.form.get("global_template") or "").strip() or None
     user_settings.simplified_appendix = (request.form.get("simplified_appendix") or "").strip() or None
     user_settings.annotated_appendix = (request.form.get("annotated_appendix") or "").strip() or None
+    user_settings.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None
     db.session.commit()
     return redirect(url_for("portal.settings"))
 
@@ -352,6 +361,15 @@ def experiment(experiment_id: int):
         Run.experiment_id == exp.id,
         Run.status.in_(["pending", "running"]),
     ).first()
+    latest_regex_run = (
+        RegexRun.query.filter_by(experiment_id=exp.id)
+        .order_by(RegexRun.started_at.desc())
+        .first()
+    )
+    active_regex_run = RegexRun.query.filter(
+        RegexRun.experiment_id == exp.id,
+        RegexRun.status.in_(["pending", "running"]),
+    ).first()
 
     return render_template(
         "portal/experiment.html",
@@ -362,7 +380,19 @@ def experiment(experiment_id: int):
         wmn_type_options=VALID_WMN_TYPES,
         latest_runs=latest_runs,
         active_run=active_run,
+        latest_regex_run=latest_regex_run,
+        active_regex_run=active_regex_run,
     )
+
+
+@bp.post("/experiments/<int:experiment_id>/delete")
+@login_required
+def delete_experiment(experiment_id: int):
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+    db.session.delete(exp)
+    db.session.commit()
+    return redirect(url_for("portal.experiments_home"))
 
 
 @bp.post("/experiments/<int:experiment_id>/configure")
@@ -492,8 +522,9 @@ def new_prompt(experiment_id: int):
         model = (request.form.get("model") or "").strip()
         prompt_text = (request.form.get("prompt_text") or "").strip()
 
-        if not name or not host or not model or not prompt_text:
-            error = "Name, model, and prompt text are required."
+        output_format_raw = request.form.get("output_format") or None
+        if not name or not prompt_text or not host or not model:
+            error = "Name, prompt text, host, and model are required."
         else:
             next_position = (
                 db.session.query(db.func.max(Prompt.position))
@@ -516,16 +547,14 @@ def new_prompt(experiment_id: int):
             except ValueError:
                 num_ctx = None
 
-            output_format = request.form.get("output_format") or None
-            if output_format not in ("simplified", "annotated"):
-                output_format = None
+            output_format = output_format_raw if output_format_raw in ("simplified", "annotated") else None
 
             db.session.add(Prompt(
                 experiment_id=exp.id,
                 position=next_position,
                 name=name,
-                host=host,
-                model=model,
+                host=host or None,
+                model=model or "—",
                 output_format=output_format,
                 system_prompt=system_prompt,
                 prompt_text=prompt_text,
@@ -558,18 +587,17 @@ def edit_prompt(experiment_id: int, prompt_id: int):
         model = (request.form.get("model") or "").strip()
         prompt_text = (request.form.get("prompt_text") or "").strip()
 
-        if not name or not host or not model or not prompt_text:
-            error = "Name, model, and prompt text are required."
+        output_format_raw = request.form.get("output_format") or None
+        if not name or not prompt_text or not host or not model:
+            error = "Name, prompt text, host, and model are required."
         else:
             prompt.name = name
-            prompt.host = host
-            prompt.model = model
+            prompt.host = host or None
+            prompt.model = model or "—"
             prompt.prompt_text = prompt_text
             prompt.system_prompt = (request.form.get("system_prompt") or "").strip() or None
 
-            output_format = request.form.get("output_format") or None
-            if output_format not in ("simplified", "annotated"):
-                output_format = None
+            output_format = output_format_raw if output_format_raw in ("simplified", "annotated") else None
             prompt.output_format = output_format
 
             temp_raw = (request.form.get("temperature") or "").strip()
@@ -593,6 +621,204 @@ def edit_prompt(experiment_id: int, prompt_id: int):
         experiment=exp,
         prompt=prompt,
         error=error,
+    )
+
+
+@bp.post("/experiments/<int:experiment_id>/regex/toggle")
+@login_required
+def toggle_regex(experiment_id: int):
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+    exp.regex_enabled = not exp.regex_enabled
+    db.session.commit()
+    return redirect(url_for("portal.experiment", experiment_id=exp.id))
+
+
+@bp.get("/experiments/<int:experiment_id>/regex/edit")
+@bp.post("/experiments/<int:experiment_id>/regex/edit")
+@login_required
+def edit_regex(experiment_id: int):
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+
+    if request.method == "POST":
+        exp.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None
+        db.session.commit()
+        return redirect(url_for("portal.experiment", experiment_id=exp.id))
+
+    user_settings = db.session.get(UserSettings, user)
+    default = user_settings.effective_regex_patterns if user_settings else REGEX_PATTERNS_DEFAULT
+    current = exp.regex_patterns if exp.regex_patterns is not None else default
+
+    return render_template(
+        "portal/edit_regex.html",
+        user=user,
+        experiment=exp,
+        regex_patterns=current,
+        regex_format_help=REGEX_FORMAT_HELP,
+    )
+
+
+@bp.post("/experiments/<int:experiment_id>/regex/run")
+@login_required
+def start_regex_run(experiment_id: int):
+    from flask import current_app
+
+    from .runner import execute_regex_run
+
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+
+    if not exp.regex_enabled:
+        return jsonify({"error": "Regex pre-filter is not enabled."}), 400
+    if not exp.dialogues_resolved_at:
+        return jsonify({"error": "Resolve the dialogue sample before running."}), 400
+
+    active = RegexRun.query.filter(
+        RegexRun.experiment_id == exp.id,
+        RegexRun.status.in_(["pending", "running"]),
+    ).first()
+    if active:
+        return jsonify({"error": "A regex run is already in progress.", "run_id": active.id}), 409
+
+    active_llm = Run.query.filter(
+        Run.experiment_id == exp.id,
+        Run.status.in_(["pending", "running"]),
+    ).first()
+    if active_llm:
+        return jsonify({"error": "An LLM run is already in progress."}), 409
+
+    regex_run = RegexRun(experiment_id=exp.id, total_count=len(exp.dialogues))
+    db.session.add(regex_run)
+    db.session.commit()
+
+    execute_regex_run(regex_run.id, current_app._get_current_object())
+    return jsonify({"run_id": regex_run.id})
+
+
+@bp.get("/api/regex-runs/<int:run_id>/status")
+@login_required
+def regex_run_status(run_id: int):
+    regex_run = db.session.get(RegexRun, run_id)
+    if regex_run is None:
+        return jsonify({"error": "Not found"}), 404
+    Experiment.query.filter_by(
+        id=regex_run.experiment_id, user_email=session["user"]
+    ).first_or_404()
+
+    return jsonify({
+        "run_id": regex_run.id,
+        "status": regex_run.status,
+        "processed_count": regex_run.processed_count,
+        "total_count": regex_run.total_count,
+        "error_message": regex_run.error_message,
+    })
+
+
+@bp.get("/experiments/<int:experiment_id>/regex/results")
+@login_required
+def regex_run_results(experiment_id: int):
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+
+    regex_run = (
+        RegexRun.query.filter_by(experiment_id=exp.id, status="complete")
+        .order_by(RegexRun.completed_at.desc())
+        .first_or_404()
+    )
+    results = (
+        RegexRunResult.query.filter_by(regex_run_id=regex_run.id)
+        .order_by(RegexRunResult.dialogue_external_id)
+        .all()
+    )
+    hit_count = sum(len(r.output) if isinstance(r.output, list) else 0 for r in results)
+    metrics, per_result_metrics = _compute_run_metrics(results)
+
+    return render_template(
+        "portal/regex_results.html",
+        user=user,
+        experiment=exp,
+        regex_run=regex_run,
+        results=results,
+        hit_count=hit_count,
+        metrics=metrics,
+        per_result_metrics=per_result_metrics,
+    )
+
+
+@bp.get("/experiments/<int:experiment_id>/regex/results/<int:result_id>")
+@login_required
+def regex_run_result_dialogue(experiment_id: int, result_id: int):
+    from .models import AnnotationSequence
+
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+
+    regex_run = (
+        RegexRun.query.filter_by(experiment_id=exp.id, status="complete")
+        .order_by(RegexRun.completed_at.desc())
+        .first_or_404()
+    )
+    result = RegexRunResult.query.filter_by(id=result_id, regex_run_id=regex_run.id).first_or_404()
+
+    utterances = _load_dialogue_utterances(result.corpus_codename, result.dialogue_external_id)
+    llm_labels = _result_label_payload(result, utterances)
+    llm_utterances: list[dict[str, str]] = []
+    llm_label_links: list[dict[str, str]] = []
+    if utterances:
+        llm_utterances, llm_label_links = _annotate_dialogue_utterances(
+            utterances, llm_labels, anchor_prefix="regex-label"
+        )
+
+    human_sequences = (
+        AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
+        .filter_by(
+            corpus_codename=result.corpus_codename,
+            dialogue_external_id=result.dialogue_external_id,
+        )
+        .order_by(AnnotationSequence.wmn_id.asc())
+        .all()
+    )
+    human_sequences = [
+        s for s in human_sequences
+        if s.wmn_type in _VALID_WMN_VALUES
+        or (s.wmn_meaning or "").strip().lower() in _RESULT_WMN_MEANINGS
+    ]
+
+    selected_wmn_id = (request.args.get("wmn_id") or "").strip()
+    selected_sequence = None
+    if selected_wmn_id:
+        selected_sequence = next(
+            (s for s in human_sequences if s.wmn_id == selected_wmn_id), None
+        )
+    if selected_sequence is None and human_sequences:
+        selected_sequence = human_sequences[0]
+
+    human_utterances: list[dict[str, str]] = []
+    human_labels: list[dict[str, Any]] = []
+    human_label_links: list[dict[str, str]] = []
+    if selected_sequence is not None and utterances:
+        human_labels = _sequence_label_payload(selected_sequence)
+        human_utterances, human_label_links = _annotate_dialogue_utterances(
+            utterances, human_labels, anchor_prefix="human-label"
+        )
+
+    return render_template(
+        "portal/regex_result_dialogue.html",
+        user=user,
+        experiment=exp,
+        regex_run=regex_run,
+        result=result,
+        utterances_missing=not utterances,
+        llm_hit_count=len(llm_labels),
+        llm_utterances=llm_utterances,
+        llm_labels=llm_labels,
+        llm_label_links=llm_label_links,
+        human_sequences=human_sequences,
+        selected_sequence=selected_sequence,
+        human_utterances=human_utterances,
+        human_labels=human_labels,
+        human_label_links=human_label_links,
     )
 
 
@@ -671,6 +897,114 @@ def run_status(run_id: int):
     })
 
 
+def _human_utterance_set(sequences) -> set[int]:
+    """Return the set of utterance indices covered by human annotation labels."""
+    indices: set[int] = set()
+    for seq in sequences:
+        for label in seq.labels:
+            if label.name not in _VALID_LABEL_NAMES:
+                continue
+            if label.start_index is None or label.end_index is None:
+                continue
+            for i in range(label.start_index, label.end_index + 1):
+                indices.add(i)
+    return indices
+
+
+def _llm_utterance_set(result: RunResult) -> set[int]:
+    """Return the set of utterance indices covered by LLM output hits."""
+    if not isinstance(result.output, list):
+        return set()
+    indices: set[int] = set()
+    for hit in result.output:
+        if not isinstance(hit, dict):
+            continue
+        start = hit.get("start_index")
+        end = hit.get("end_index")
+        if start is None:
+            continue
+        end = end if end is not None else start
+        for i in range(int(start), int(end) + 1):
+            indices.add(i)
+    return indices
+
+
+def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict]]:
+    """Compute utterance-level precision/recall/F1 for a run against human annotations.
+
+    Returns:
+        aggregate: dict with precision, recall, f1, tp, fp, fn, dialogues_with_hits,
+                   dialogues_with_human, dialogues_both
+        per_result: dict mapping result.id -> {matched, llm_count, human_count}
+    """
+    from .models import AnnotationSequence
+
+    # Batch-load all relevant AnnotationSequences
+    keys = {(r.corpus_codename, r.dialogue_external_id) for r in results}
+    all_seqs = (
+        AnnotationSequence.query
+        .options(selectinload(AnnotationSequence.labels))
+        .filter(
+            db.tuple_(
+                AnnotationSequence.corpus_codename,
+                AnnotationSequence.dialogue_external_id,
+            ).in_(list(keys))
+        )
+        .all()
+    )
+    # Filter to relevant sequences (same logic as run_result_dialogue)
+    seqs_by_dialogue: dict[tuple, list] = {}
+    for seq in all_seqs:
+        if seq.wmn_type not in _VALID_WMN_VALUES and (seq.wmn_meaning or "").strip().lower() not in _RESULT_WMN_MEANINGS:
+            continue
+        key = (seq.corpus_codename, seq.dialogue_external_id)
+        seqs_by_dialogue.setdefault(key, []).append(seq)
+
+    tp = fp = fn = 0
+    dialogues_with_hits = dialogues_with_human = dialogues_both = 0
+    per_result: dict[int, dict] = {}
+
+    for result in results:
+        key = (result.corpus_codename, result.dialogue_external_id)
+        human_seqs = seqs_by_dialogue.get(key, [])
+        human_set = _human_utterance_set(human_seqs)
+        llm_set = _llm_utterance_set(result)
+
+        matched = len(human_set & llm_set)
+        tp += matched
+        fp += len(llm_set - human_set)
+        fn += len(human_set - llm_set)
+
+        if llm_set:
+            dialogues_with_hits += 1
+        if human_set:
+            dialogues_with_human += 1
+        if llm_set and human_set:
+            dialogues_both += 1
+
+        per_result[result.id] = {
+            "matched": matched,
+            "llm_count": len(llm_set),
+            "human_count": len(human_set),
+        }
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else None
+    recall = tp / (tp + fn) if (tp + fn) > 0 else None
+    f1 = (2 * precision * recall / (precision + recall)) if (precision and recall) else None
+
+    aggregate = {
+        "tp": tp, "fp": fp, "fn": fn,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "dialogues_with_hits": dialogues_with_hits,
+        "dialogues_with_human": dialogues_with_human,
+        "dialogues_both": dialogues_both,
+        "total": len(results),
+    }
+    return aggregate, per_result
+
+
 @bp.get("/experiments/<int:experiment_id>/prompts/<int:prompt_id>/results")
 @login_required
 def run_results(experiment_id: int, prompt_id: int):
@@ -692,6 +1026,7 @@ def run_results(experiment_id: int, prompt_id: int):
         len(r.output) if isinstance(r.output, list) else 0
         for r in results
     )
+    metrics, per_result_metrics = _compute_run_metrics(results)
     return render_template(
         "portal/results.html",
         user=user,
@@ -700,6 +1035,8 @@ def run_results(experiment_id: int, prompt_id: int):
         run=run,
         results=results,
         hit_count=hit_count,
+        metrics=metrics,
+        per_result_metrics=per_result_metrics,
     )
 
 
