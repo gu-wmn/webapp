@@ -797,6 +797,12 @@ a.diag-id:focus-visible {
   margin: 0;
 }
 
+.portal-dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
 a.button {
   display: inline-block;
   background: var(--accent);
@@ -1001,37 +1007,56 @@ a.button:hover {
   font-weight: 600;
 }
 
-.prompt-model {
-  font-size: 0.82rem;
-  color: var(--muted);
-  background: var(--accent-soft);
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+.prompt-config-list {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--line);
 }
 
-.prompt-meta {
-  font-size: 0.78rem;
-  color: var(--muted);
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+.prompt-config-row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.prompt-preview {
+.prompt-config-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.prompt-config-value-wrap {
+  position: relative;
+  min-width: 0;
+  display: block;
+}
+
+.prompt-config-value {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.prompt-config-value-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4rem;
+  height: 100%;
+  background: linear-gradient(to right, rgb(255 255 255 / 0%), var(--paper));
+  pointer-events: none;
+}
+
+.prompt-config-code {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0.4rem 0 0;
-}
-
-.prompt-system {
-  color: var(--muted);
-  font-style: italic;
 }
 
 .button-secondary-sm {
@@ -1111,6 +1136,17 @@ a.button:hover {
 }
 
 @media (max-width: 640px) {
+  .portal-dashboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .portal-dashboard-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .exp-config-grid {
     grid-template-columns: 1fr;
   }
@@ -1121,6 +1157,11 @@ a.button:hover {
 
   .prompt-item {
     margin-left: 1.25rem;
+  }
+
+  .prompt-config-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
   }
 }
 

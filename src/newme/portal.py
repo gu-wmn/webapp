@@ -51,7 +51,7 @@ def login_required(f):
 @bp.post("/login")
 def login():
     if session.get("user"):
-        return redirect(url_for("portal.dashboard"))
+        return redirect(url_for("portal.experiments_home"))
 
     error = None
     if request.method == "POST":
@@ -61,7 +61,7 @@ def login():
         if email in users and users[email] == password:
             session.permanent = True
             session["user"] = email
-            return redirect(url_for("portal.dashboard"))
+            return redirect(url_for("portal.experiments_home"))
         error = "Invalid email or password."
 
     return render_template("portal/login.html", error=error)
@@ -73,20 +73,30 @@ def logout():
     return redirect(url_for("portal.login"))
 
 
-@bp.get("/dashboard")
+@bp.get("/experiments")
 @login_required
-def dashboard():
+def experiments_home():
     user = session["user"]
     experiments = (
         Experiment.query.filter_by(user_email=user)
         .order_by(Experiment.created_at.desc())
         .all()
     )
-    user_settings = db.session.get(UserSettings, user)
     return render_template(
-        "portal/dashboard.html",
+        "portal/experiments.html",
         user=user,
         experiments=experiments,
+    )
+
+
+@bp.get("/settings")
+@login_required
+def settings():
+    user = session["user"]
+    user_settings = db.session.get(UserSettings, user)
+    return render_template(
+        "portal/settings.html",
+        user=user,
         user_settings=user_settings,
         simplified_appendix_default=SIMPLIFIED_APPENDIX_DEFAULT,
         annotated_appendix_default=ANNOTATED_APPENDIX_DEFAULT,
@@ -106,7 +116,7 @@ def save_settings():
     user_settings.simplified_appendix = (request.form.get("simplified_appendix") or "").strip() or None
     user_settings.annotated_appendix = (request.form.get("annotated_appendix") or "").strip() or None
     db.session.commit()
-    return redirect(url_for("portal.dashboard"))
+    return redirect(url_for("portal.settings"))
 
 
 @bp.get("/experiments/new")
@@ -133,6 +143,7 @@ def experiment(experiment_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
     corpora = _get_corpora()
+    user_settings = db.session.get(UserSettings, user)
 
     latest_runs = {
         p.id: Run.query.filter_by(prompt_id=p.id)
@@ -149,6 +160,7 @@ def experiment(experiment_id: int):
         "portal/experiment.html",
         user=user,
         experiment=exp,
+        user_settings=user_settings,
         corpora=corpora,
         wmn_type_options=VALID_WMN_TYPES,
         latest_runs=latest_runs,

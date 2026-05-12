@@ -1,17 +1,17 @@
 {% extends "portal/base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Settings{% endblock %}
 
 {% block content %}
 <div class="portal-dashboard">
   <div class="portal-dashboard-header">
-    <h1>Dashboard</h1>
-    <a href="{{ url_for('portal.new_experiment') }}" class="button">New Experiment</a>
+    <div>
+      <a href="{{ url_for('portal.experiments_home') }}">&larr; Experiments</a>
+      <h1>Settings</h1>
+    </div>
   </div>
 
-  <details class="settings-panel">
-    <summary>Settings</summary>
+  <section class="settings-panel">
     <form method="post" action="{{ url_for('portal.save_settings') }}" class="settings-form">
-
       <div class="form-field">
         <label for="global_template">Global prompt template
           <span class="field-hint">— prepended to every prompt</span>
@@ -37,19 +37,6 @@
 
       <button type="submit">Save settings</button>
     </form>
-  </details>
-
-  {% if experiments %}
-  <ul class="experiment-list">
-    {% for exp in experiments %}
-    <li class="experiment-item">
-      <a href="{{ url_for('portal.experiment', experiment_id=exp.id) }}">{{ exp.name }}</a>
-      <span class="experiment-date">{{ exp.created_at.strftime('%Y-%m-%d') }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="portal-empty">No experiments yet. Create one to get started.</p>
-  {% endif %}
+  </section>
 </div>
 {% endblock %}

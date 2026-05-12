@@ -1,93 +1,24 @@
 {% extends "portal/base.html" %}
 {% block title %}{{ experiment.name }}{% endblock %}
 
+{% macro prompt_config_row(label, value, value_class='') -%}
+  {% if value is not none and value != '' %}
+  <div class="prompt-config-row">
+    <span class="prompt-config-label">{{ label }}</span>
+    <span class="prompt-config-value-wrap">
+      <span class="prompt-config-value{% if value_class %} {{ value_class }}{% endif %}" title="{{ value }}">{{ value | replace('\r', ' ') | replace('\n', ' ') | trim }}</span>
+    </span>
+  </div>
+  {% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="portal-experiment">
 
   <div class="portal-experiment-header">
-    <a href="{{ url_for('portal.dashboard') }}">&larr; Dashboard</a>
+    <a href="{{ url_for('portal.experiments_home') }}">&larr; Experiments</a>
     <h1>{{ experiment.name }}</h1>
   </div>
-
-  {# ── Prompt chain ─────────────────────────────────────────────── #}
-  <section class="exp-section">
-    <div class="exp-section-header">
-      <h2>Prompt chain</h2>
-      <a href="{{ url_for('portal.new_prompt', experiment_id=experiment.id) }}" class="button">Add prompt</a>
-    </div>
-
-    {% if experiment.prompts %}
-    <ol class="prompt-chain">
-      {% for prompt in experiment.prompts %}
-      {% set latest_run = latest_runs.get(prompt.id) %}
-      <li class="prompt-item" id="prompt-{{ prompt.id }}">
-        <div class="prompt-item-header">
-          <span class="prompt-name">{{ prompt.name }}</span>
-          <span class="prompt-model">{{ prompt.model }}</span>
-          {% if prompt.host %}<span class="prompt-model">{{ prompt.host }}</span>{% endif %}
-          {% if prompt.output_format %}<span class="prompt-format-badge">{{ prompt.output_format }}</span>{% endif %}
-          <a href="{{ url_for('portal.edit_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
-            class="button-secondary-sm" style="margin-left:auto">Edit</a>
-          <form method="post" action="{{ url_for('portal.delete_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
-            onsubmit="return confirm('Delete this prompt?')">
-            <button type="submit" class="button-danger-sm">Delete</button>
-          </form>
-        </div>
-
-        <div class="prompt-meta">
-          {% if prompt.temperature is not none %}<span>temp {{ prompt.temperature }}</span>{% endif %}
-          {% if prompt.num_ctx %}<span>ctx {{ prompt.num_ctx }}</span>{% endif %}
-        </div>
-
-        {% if prompt.system_prompt %}
-        <pre class="prompt-preview prompt-system">{{ prompt.system_prompt }}</pre>
-        {% endif %}
-        <pre class="prompt-preview">{{ prompt.prompt_text }}</pre>
-
-        {# ── Run controls ── #}
-        <div class="run-section">
-          {% if latest_run %}
-            {% if latest_run.status == "running" or latest_run.status == "pending" %}
-            <div class="run-progress" data-run-id="{{ latest_run.id }}" data-experiment-id="{{ experiment.id }}">
-              <span class="run-status-badge run-running">Running</span>
-              <div class="progress-bar">
-                <div class="progress-fill" style="width:{{ ((latest_run.processed_count / latest_run.total_count * 100) if latest_run.total_count else 0)|int }}%"></div>
-              </div>
-              <span class="run-progress-label">
-                {{ latest_run.processed_count }} / {{ latest_run.total_count }}
-              </span>
-            </div>
-            {% elif latest_run.status == "complete" %}
-            <span class="run-status-badge run-complete">Complete</span>
-            <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
-            <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}"
-              class="button-secondary">View results</a>
-            {% elif latest_run.status == "error" %}
-            <span class="run-status-badge run-error">Error</span>
-            <span class="run-meta run-error-msg" title="{{ latest_run.error_message }}">
-              {{ (latest_run.error_message or '')[:80] }}{% if (latest_run.error_message or '')|length > 80 %}…{% endif %}
-            </span>
-            {% endif %}
-          {% endif %}
-
-          {% if not active_run or (latest_run and (latest_run.status == "running" or latest_run.status == "pending")) %}
-          {# show disabled run button when this prompt is the active one #}
-          {% endif %}
-
-          <button class="run-btn"
-            data-experiment-id="{{ experiment.id }}"
-            data-prompt-id="{{ prompt.id }}"
-            {% if active_run %}disabled{% endif %}>
-            {% if latest_run and latest_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
-          </button>
-        </div>
-      </li>
-      {% endfor %}
-    </ol>
-    {% else %}
-    <p class="portal-empty">No prompts yet. Add the first one to build the chain.</p>
-    {% endif %}
-  </section>
 
   {# ── Dialogue sample ───────────────────────────────────────────── #}
   <section class="exp-section">
@@ -143,35 +74,92 @@
       </div>
     </form>
 
-    {% if experiment.dialogues_resolved_at %}
-    <form method="post" action="{{ url_for('portal.resolve_experiment', experiment_id=experiment.id) }}" style="margin-top:0.75rem">
-      <button type="submit" class="button-secondary">Re-resolve sample</button>
-    </form>
-    {% else %}
     <form method="post" action="{{ url_for('portal.resolve_experiment', experiment_id=experiment.id) }}" style="margin-top:1rem">
       <button type="submit">Resolve sample</button>
     </form>
-    {% endif %}
   </section>
 
-  {% if experiment.dialogues %}
+  {# ── Prompt chain ─────────────────────────────────────────────── #}
   <section class="exp-section">
-    <h2>Dialogues ({{ experiment.dialogues | length }})</h2>
-    <table class="exp-dialogue-table">
-      <thead>
-        <tr><th>Dialogue ID</th><th>Corpus</th></tr>
-      </thead>
-      <tbody>
-        {% for d in experiment.dialogues | sort(attribute='dialogue_external_id') %}
-        <tr>
-          <td>{{ d.dialogue_external_id }}</td>
-          <td>{{ d.corpus_codename }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="exp-section-header">
+      <h2>Prompt chain</h2>
+      <a href="{{ url_for('portal.new_prompt', experiment_id=experiment.id) }}" class="button">Add prompt</a>
+    </div>
+
+    {% if experiment.prompts %}
+    <ol class="prompt-chain">
+      {% for prompt in experiment.prompts %}
+      {% set latest_run = latest_runs.get(prompt.id) %}
+      <li class="prompt-item" id="prompt-{{ prompt.id }}">
+        <div class="prompt-item-header">
+          <span class="prompt-name">{{ prompt.name }}</span>
+          <a href="{{ url_for('portal.edit_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+            class="button-secondary-sm" style="margin-left:auto">Edit</a>
+          <form method="post" action="{{ url_for('portal.delete_prompt', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+            onsubmit="return confirm('Delete this prompt?')">
+            <button type="submit" class="button-danger-sm">Delete</button>
+          </form>
+        </div>
+
+        <div class="prompt-config-list">
+          {{ prompt_config_row("Model", prompt.model) }}
+          {{ prompt_config_row("Host", prompt.host or "Default") }}
+          {{ prompt_config_row("Output Format", prompt.output_format or "Free text") }}
+          {% if prompt.temperature is not none %}
+            {{ prompt_config_row("Temperature", prompt.temperature) }}
+          {% endif %}
+          {% if prompt.num_ctx %}
+            {{ prompt_config_row("Context", prompt.num_ctx) }}
+          {% endif %}
+          {{ prompt_config_row("Global prompt", user_settings.global_template if user_settings else none, "prompt-config-code") }}
+          {{ prompt_config_row("System prompt", prompt.system_prompt, "prompt-config-code") }}
+          {{ prompt_config_row("Custom prompt", prompt.prompt_text, "prompt-config-code") }}
+        </div>
+
+        {# ── Run controls ── #}
+        <div class="run-section">
+          {% if latest_run %}
+            {% if latest_run.status == "running" or latest_run.status == "pending" %}
+            <div class="run-progress" data-run-id="{{ latest_run.id }}" data-experiment-id="{{ experiment.id }}">
+              <span class="run-status-badge run-running">Running</span>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width:{{ ((latest_run.processed_count / latest_run.total_count * 100) if latest_run.total_count else 0)|int }}%"></div>
+              </div>
+              <span class="run-progress-label">
+                {{ latest_run.processed_count }} / {{ latest_run.total_count }}
+              </span>
+            </div>
+            {% elif latest_run.status == "complete" %}
+            <span class="run-status-badge run-complete">Complete</span>
+            <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+              class="button-secondary">View results</a>
+            {% elif latest_run.status == "error" %}
+            <span class="run-status-badge run-error">Error</span>
+            <span class="run-meta run-error-msg" title="{{ latest_run.error_message }}">
+              {{ (latest_run.error_message or '')[:80] }}{% if (latest_run.error_message or '')|length > 80 %}…{% endif %}
+            </span>
+            {% endif %}
+          {% endif %}
+
+          {% if not active_run or (latest_run and (latest_run.status == "running" or latest_run.status == "pending")) %}
+          {# show disabled run button when this prompt is the active one #}
+          {% endif %}
+
+          <button class="run-btn"
+            data-experiment-id="{{ experiment.id }}"
+            data-prompt-id="{{ prompt.id }}"
+            {% if active_run %}disabled{% endif %}>
+            {% if latest_run and latest_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
+          </button>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="portal-empty">No prompts yet. Add the first one to build the chain.</p>
+    {% endif %}
   </section>
-  {% endif %}
 
 </div>
 {% endblock %}

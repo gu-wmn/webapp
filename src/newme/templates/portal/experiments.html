@@ -1,0 +1,27 @@
+{% extends "portal/base.html" %}
+{% block title %}Experiments{% endblock %}
+
+{% block content %}
+<div class="portal-dashboard">
+  <div class="portal-dashboard-header">
+    <h1>Experiments</h1>
+    <div class="portal-dashboard-actions">
+      <a href="{{ url_for('portal.settings') }}">Settings</a>
+      <a href="{{ url_for('portal.new_experiment') }}" class="button">New Experiment</a>
+    </div>
+  </div>
+
+  {% if experiments %}
+  <ul class="experiment-list">
+    {% for exp in experiments %}
+    <li class="experiment-item">
+      <a href="{{ url_for('portal.experiment', experiment_id=exp.id) }}">{{ exp.name }}</a>
+      <span class="experiment-date">{{ exp.created_at.strftime('%Y-%m-%d') }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="portal-empty">No experiments yet. Create one to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}
