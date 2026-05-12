@@ -11,7 +11,9 @@ def format_dialogue(utterances) -> str:
     return "\n".join(f"[{u.position}] {u.author}: {u.text}" for u in utterances)
 
 
-def assemble_prompt_text(prompt, dialogue_text: str, previous_output: str, user_settings) -> str:
+def assemble_prompt_text(
+    prompt, dialogue_text: str, previous_output: str, user_settings, regex_candidates: str = ""
+) -> str:
     parts = []
 
     if user_settings and user_settings.global_template:
@@ -22,6 +24,7 @@ def assemble_prompt_text(prompt, dialogue_text: str, previous_output: str, user_
     text = "\n\n".join(p for p in parts if p)
     text = text.replace("{dialogue}", dialogue_text)
     text = text.replace("{previous_output}", previous_output)
+    text = text.replace("{regex_candidates}", regex_candidates)
 
     if prompt.output_format == "simplified":
         appendix = (
@@ -29,11 +32,11 @@ def assemble_prompt_text(prompt, dialogue_text: str, previous_output: str, user_
             if user_settings
             else _simplified_default()
         )
-    elif prompt.output_format == "annotated":
+    elif prompt.output_format == "detailed":
         appendix = (
-            user_settings.effective_annotated_appendix
+            user_settings.effective_detailed_appendix
             if user_settings
-            else _annotated_default()
+            else _detailed_default()
         )
     else:
         appendix = ""
@@ -49,9 +52,9 @@ def _simplified_default() -> str:
     return SIMPLIFIED_APPENDIX_DEFAULT
 
 
-def _annotated_default() -> str:
-    from .models.experiment import ANNOTATED_APPENDIX_DEFAULT
-    return ANNOTATED_APPENDIX_DEFAULT
+def _detailed_default() -> str:
+    from .models.experiment import DETAILED_APPENDIX_DEFAULT
+    return DETAILED_APPENDIX_DEFAULT
 
 
 def _get_output_schema(output_format: str) -> dict | None:
@@ -75,7 +78,7 @@ def _get_output_schema(output_format: str) -> dict | None:
             },
             "required": ["hits"],
         }
-    if output_format == "annotated":
+    if output_format == "detailed":
         return {
             "type": "object",
             "properties": {
@@ -175,6 +178,53 @@ def _run_regex(
                 })
 
     return hits
+
+
+def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: list) -> str:
+    from .models.experiment import RegexRun, RegexRunResult
+
+    if not experiment.regex_enabled:
+        return ""
+
+    regex_run = (
+        RegexRun.query.filter_by(experiment_id=experiment.id, status="complete")
+        .order_by(RegexRun.completed_at.desc())
+        .first()
+    )
+    if not regex_run:
+        return ""
+
+    result = RegexRunResult.query.filter_by(
+        regex_run_id=regex_run.id,
+        dialogue_external_id=dialogue_external_id,
+    ).first()
+
+    if not result or not result.output:
+        return ""
+
+    utt_map = {u.position: u for u in utterances}
+    seen: set[int] = set()
+    hit_lines = []
+    for hit in result.output:
+        idx = hit.get("start_index")
+        if idx is None or idx in seen:
+            continue
+        seen.add(idx)
+        utt = utt_map.get(idx)
+        if utt:
+            hit_lines.append(f"[{idx}] {utt.author}: {utt.text}  [{hit.get('label', '')}]")
+
+    if not hit_lines:
+        return ""
+
+    lines = [
+        "The following utterances were flagged by a regex pre-filter as likely "
+        "Indicators (high recall, low precision — treat as hints, not ground truth):",
+        *hit_lines,
+        "These are starting points. Look for Indicators the pre-filter may have "
+        "missed, and do not assume every flagged utterance is genuinely an Indicator.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _get_previous_output(prompt, dialogue_external_id: str) -> str:
@@ -327,6 +377,9 @@ def _run_worker(run_id: int, app) -> None:
         run.started_at = datetime.now(timezone.utc)
         db.session.commit()
 
+        _unload_client = None
+        _unload_model = None
+
         try:
             prompt = db.session.get(Prompt, run.prompt_id)
             experiment = prompt.experiment
@@ -337,8 +390,25 @@ def _run_worker(run_id: int, app) -> None:
             db.session.commit()
 
             is_regex = (prompt.output_format == "regex")
-            client = None if is_regex else get_client(prompt.host or "http://127.0.0.1:11434")
+            host = prompt.host or "http://127.0.0.1:11434"
+            client = None if is_regex else get_client(host)
+            if client is not None:
+                _unload_client = client
+                _unload_model = prompt.model
             schema = _get_output_schema(prompt.output_format)
+
+            if not is_regex:
+                from .ollama_client import list_models
+                available = list_models(host)
+                if not available:
+                    raise RuntimeError(
+                        f"Could not connect to Ollama at {host}. Is it running?"
+                    )
+                if prompt.model not in available:
+                    raise RuntimeError(
+                        f"Model '{prompt.model}' is not available at {host}. "
+                        f"Available: {', '.join(available)}"
+                    )
 
             for exp_dialogue in dialogues:
                 output = None
@@ -377,8 +447,11 @@ def _run_worker(run_id: int, app) -> None:
                         previous_output = _get_previous_output(
                             prompt, exp_dialogue.dialogue_external_id
                         )
+                        regex_candidates = _get_regex_candidates(
+                            experiment, exp_dialogue.dialogue_external_id, utterances
+                        )
                         prompt_text = assemble_prompt_text(
-                            prompt, dialogue_text, previous_output, user_settings
+                            prompt, dialogue_text, previous_output, user_settings, regex_candidates
                         )
 
                         messages = []
@@ -451,3 +524,9 @@ def _run_worker(run_id: int, app) -> None:
                 run.error_message = str(exc)
                 run.completed_at = datetime.now(timezone.utc)
                 db.session.commit()
+        finally:
+            if _unload_client is not None and _unload_model:
+                try:
+                    _unload_client.generate(model=_unload_model, prompt="", keep_alive=0)
+                except Exception:
+                    pass

@@ -28,7 +28,7 @@
           <select id="output_format" name="output_format">
             <option value="">None (free text)</option>
             <option value="simplified">Simplified</option>
-            <option value="annotated">Annotated</option>
+            <option value="detailed">Detailed</option>
           </select>
         </div>
 
@@ -71,7 +71,7 @@
           <label for="prompt_text">Prompt template</label>
           <textarea id="prompt_text" name="prompt_text" rows="12" required
             placeholder="Use {dialogue} to insert the dialogue text."></textarea>
-          <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code></p>
+          <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code>, <code>{regex_candidates}</code></p>
         </div>
       </div>
 

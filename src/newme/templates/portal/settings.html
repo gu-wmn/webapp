@@ -41,12 +41,12 @@
 
     <div class="settings-section">
       <div class="settings-section-label">
-        <h2>Annotated output appendix</h2>
-        <p>Appended to prompts using the <strong>Annotated</strong> output format. Instructs the model to return character-level spans, excerpts, and WMN type.</p>
+        <h2>Detailed output appendix</h2>
+        <p>Appended to prompts using the <strong>Detailed</strong> output format. Instructs the model to return character-level spans, excerpts, and WMN type.</p>
       </div>
       <div class="form-field">
-        <textarea id="annotated_appendix" name="annotated_appendix" rows="12"
-          class="settings-code-field">{{ (us.annotated_appendix if us and us.annotated_appendix) or annotated_appendix_default }}</textarea>
+        <textarea id="detailed_appendix" name="detailed_appendix" rows="12"
+          class="settings-code-field">{{ (us.detailed_appendix if us and us.detailed_appendix) or detailed_appendix_default }}</textarea>
       </div>
     </div>
 

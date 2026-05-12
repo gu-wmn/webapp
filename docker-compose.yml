@@ -9,7 +9,7 @@ services:
       NEWME_DATA_PATH: /data
       SECRET_KEY: ${SECRET_KEY:-change-me}
       NEWME_USERS: ${NEWME_USERS:-}
-      OLLAMA_HOSTS: ${OLLAMA_HOSTS:-http://127.0.0.1:11434}
+      OLLAMA_HOSTS: ${OLLAMA_HOSTS:-merl|http://merl.clasp.gu.se,lark|http://lark.clasp.gu.se,localhost|http://127.0.0.1:11434}
     volumes:
       - ./data:/data
     restart: unless-stopped

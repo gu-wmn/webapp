@@ -21,7 +21,7 @@ SIMPLIFIED_APPENDIX_DEFAULT = (
     'If no WMN is found, return: {"hits": []}'
 )
 
-ANNOTATED_APPENDIX_DEFAULT = (
+DETAILED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
     '  - dialogue_id (string)\n'
@@ -30,9 +30,72 @@ ANNOTATED_APPENDIX_DEFAULT = (
     '  - start_offset (integer): character offset within the start utterance\n'
     '  - end_offset (integer): character offset within the end utterance\n'
     '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - excerpt (string): the exact text of the annotated span\n'
+    '  - excerpt (string): the exact text of the matched span\n'
     '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n\n'
     'If no WMN is found, return: {"hits": []}'
+)
+
+DEFAULT_PROMPT_1_NAME = "Indicator detection"
+DEFAULT_PROMPT_1_MODEL = "qwen3:30b"
+DEFAULT_PROMPT_1_HOST = "http://merl.clasp.gu.se"
+DEFAULT_PROMPT_1_OUTPUT_FORMAT = "simplified"
+DEFAULT_PROMPT_1_TEXT = (
+    "An Indicator is an utterance that signals a need to discuss or clarify the "
+    "meaning of a word or phrase. It may take the form of a direct request for "
+    "clarification, a challenge to how a word is being used, or an expression of "
+    "non-understanding tied to a specific word or phrase.\n\n"
+    "{regex_candidates}\n"
+    "Read the dialogue below and identify all utterances that could be Indicators. "
+    "Include uncertain cases — a later stage will determine which are genuine. "
+    "Prefer inclusion over exclusion.\n\n"
+    "{dialogue}"
+)
+
+DEFAULT_PROMPT_2_NAME = "WMN validation"
+DEFAULT_PROMPT_2_MODEL = "llama3.3:70b-instruct-q4_K_M"
+DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se"
+DEFAULT_PROMPT_2_OUTPUT_FORMAT = "detailed"
+DEFAULT_PROMPT_2_TEXT = (
+    "You are reviewing candidate Indicator utterances to determine whether each "
+    "belongs to a genuine Word Meaning Negotiation (WMN).\n\n"
+    "A WMN occurs when a conversation shifts from its main topic to explicitly "
+    "discussing the meaning of a word or phrase — a meta-linguistic shift. "
+    "This shift is what distinguishes a WMN from ordinary conversation.\n\n"
+    "Every WMN follows a three-part structure:\n\n"
+    "Trigger: The utterance containing the specific word or phrase whose meaning "
+    "later becomes contested. The Trigger precedes the Indicator and may not be "
+    "recognisable as such until the Indicator appears.\n\n"
+    "Indicator: The utterance signalling that a word's meaning needs to be "
+    "discussed. It takes one of two forms:\n"
+    "- A clarification request: the listener does not understand the word and asks "
+    "for an explanation (NON — non-understanding)\n"
+    "- A meta-linguistic objection: the listener challenges the appropriateness or "
+    "meaning of the word in the given context (DIN — disagreement)\n\n"
+    "Negotiation: One or more response turns following the Indicator where the "
+    "meaning is actively discussed or explained. The Negotiation must reflect a "
+    "genuine meta-linguistic shift — the focus moves from the original topic to "
+    "the word's meaning itself, even if intertwined with the original discussion. "
+    "Multiple turns may constitute the Negotiation.\n\n"
+    "To confirm a WMN from each candidate Indicator:\n"
+    "1. Identify the specific word or phrase being questioned and locate it "
+    "precisely in a preceding utterance — this is the Trigger.\n"
+    "2. Check whether the response after the Indicator contains a meta-linguistic "
+    "shift. If the speaker ignores the question, changes subject, or only "
+    "continues the original topic without addressing the word's meaning, it is "
+    "not a WMN.\n"
+    "3. Confirm the issue is semantic — about what the word means — and not a "
+    "mishearing or pronunciation problem.\n"
+    "4. If all three parts are present and the meta-linguistic shift is clear, "
+    "confirm the WMN and classify it as NON (non-understanding) or DIN "
+    "(disagreement), or Other if neither clearly applies.\n\n"
+    "The following candidate Indicators were identified in the previous stage:\n"
+    "{previous_output}\n\n"
+    "For each candidate, work through the steps above. Confirm or reject. "
+    "For confirmed WMNs, identify the Trigger word or phrase with its precise "
+    "character-level location, the Indicator utterance, and all Negotiation "
+    "utterances. Reject any Indicator that does not have a clear Trigger and "
+    "Negotiation.\n\n"
+    "{dialogue}"
 )
 
 REGEX_FORMAT_HELP = (
@@ -115,7 +178,7 @@ class UserSettings(db.Model):
     user_email = db.Column(db.String, primary_key=True)
     global_template = db.Column(db.Text, nullable=True)
     simplified_appendix = db.Column(db.Text, nullable=True)
-    annotated_appendix = db.Column(db.Text, nullable=True)
+    detailed_appendix = db.Column('annotated_appendix', db.Text, nullable=True)
     regex_patterns = db.Column(db.Text, nullable=True)
 
     @property
@@ -123,8 +186,8 @@ class UserSettings(db.Model):
         return self.simplified_appendix if self.simplified_appendix is not None else SIMPLIFIED_APPENDIX_DEFAULT
 
     @property
-    def effective_annotated_appendix(self) -> str:
-        return self.annotated_appendix if self.annotated_appendix is not None else ANNOTATED_APPENDIX_DEFAULT
+    def effective_detailed_appendix(self) -> str:
+        return self.detailed_appendix if self.detailed_appendix is not None else DETAILED_APPENDIX_DEFAULT
 
     @property
     def effective_regex_patterns(self) -> str:
@@ -152,7 +215,7 @@ class Experiment(db.Model):
         nullable=False,
         default=lambda: [v for v, _ in VALID_WMN_TYPES],
     )
-    sample_size = db.Column(db.Integer, nullable=True)
+    sample_size = db.Column(db.Integer, nullable=True, default=5)
     random_seed = db.Column(
         db.Integer,
         nullable=False,
@@ -207,7 +270,7 @@ class Prompt(db.Model):
     model = db.Column(db.String, nullable=False)
     system_prompt = db.Column(db.Text, nullable=True)
     prompt_text = db.Column(db.Text, nullable=False)
-    output_format = db.Column(db.String, nullable=True)  # "simplified", "annotated", or None
+    output_format = db.Column(db.String, nullable=True)  # "simplified", "detailed", or None
     temperature = db.Column(db.Float, nullable=True)
     num_ctx = db.Column(db.Integer, nullable=True)
 

@@ -10,7 +10,17 @@ from sqlalchemy.orm import selectinload
 
 from .extensions import db
 from .models.experiment import (
-    ANNOTATED_APPENDIX_DEFAULT,
+    DEFAULT_PROMPT_1_HOST,
+    DEFAULT_PROMPT_1_MODEL,
+    DEFAULT_PROMPT_1_NAME,
+    DEFAULT_PROMPT_1_OUTPUT_FORMAT,
+    DEFAULT_PROMPT_1_TEXT,
+    DEFAULT_PROMPT_2_HOST,
+    DEFAULT_PROMPT_2_MODEL,
+    DEFAULT_PROMPT_2_NAME,
+    DEFAULT_PROMPT_2_OUTPUT_FORMAT,
+    DEFAULT_PROMPT_2_TEXT,
+    DETAILED_APPENDIX_DEFAULT,
     REGEX_FORMAT_HELP,
     REGEX_PATTERNS_DEFAULT,
     SIMPLIFIED_APPENDIX_DEFAULT,
@@ -96,16 +106,13 @@ def _annotate_dialogue_utterances(
         if start_index >= len(annotated) or end_index >= len(annotated):
             continue
 
-        faulty = bool(label.get("faulty"))
         anchor_id = f"{anchor_prefix}-{label_id}"
-        css_classes = f"{name} faulty-span" if faulty else name
-        start_span = f'<span class="{css_classes}" id="{anchor_id}">'
+        start_span = f'<span class="{name}" id="{anchor_id}">'
         end_span = "</span>"
         label_links.append({
             "name": str(name),
             "excerpt": str(label.get("excerpt") or "").strip(),
             "anchor_id": anchor_id,
-            "faulty": faulty,
             "wmn_type": str(label.get("wmn_type") or "").strip(),
         })
 
@@ -232,12 +239,6 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
             end_offset = len(utterances[end_index]["text"])
 
         excerpt = str(hit.get("excerpt") or "")
-        from .runner import _normalize_transcript
-        faulty = bool(
-            excerpt
-            and excerpt not in utterances[start_index]["text"]
-            and _normalize_transcript(excerpt) not in _normalize_transcript(utterances[start_index]["text"])
-        )
 
         labels.append(
             {
@@ -247,7 +248,6 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
                 "start_offset": start_offset,
                 "end_offset": end_offset,
                 "excerpt": excerpt,
-                "faulty": faulty,
                 "wmn_type": str(hit.get("wmn_type") or "").strip(),
             }
         )
@@ -307,7 +307,7 @@ def settings():
         user=user,
         us=user_settings,
         simplified_appendix_default=SIMPLIFIED_APPENDIX_DEFAULT,
-        annotated_appendix_default=ANNOTATED_APPENDIX_DEFAULT,
+        detailed_appendix_default=DETAILED_APPENDIX_DEFAULT,
         regex_patterns_default=REGEX_PATTERNS_DEFAULT,
         regex_format_help=REGEX_FORMAT_HELP,
     )
@@ -324,7 +324,7 @@ def save_settings():
 
     user_settings.global_template = (request.form.get("global_template") or "").strip() or None
     user_settings.simplified_appendix = (request.form.get("simplified_appendix") or "").strip() or None
-    user_settings.annotated_appendix = (request.form.get("annotated_appendix") or "").strip() or None
+    user_settings.detailed_appendix = (request.form.get("detailed_appendix") or "").strip() or None
     user_settings.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None
     db.session.commit()
     return redirect(url_for("portal.settings"))
@@ -343,6 +343,25 @@ def new_experiment():
         else:
             exp = Experiment(user_email=user, name=name)
             db.session.add(exp)
+            db.session.flush()
+            db.session.add(Prompt(
+                experiment_id=exp.id,
+                position=1,
+                name=DEFAULT_PROMPT_1_NAME,
+                host=DEFAULT_PROMPT_1_HOST,
+                model=DEFAULT_PROMPT_1_MODEL,
+                prompt_text=DEFAULT_PROMPT_1_TEXT,
+                output_format=DEFAULT_PROMPT_1_OUTPUT_FORMAT,
+            ))
+            db.session.add(Prompt(
+                experiment_id=exp.id,
+                position=2,
+                name=DEFAULT_PROMPT_2_NAME,
+                host=DEFAULT_PROMPT_2_HOST,
+                model=DEFAULT_PROMPT_2_MODEL,
+                prompt_text=DEFAULT_PROMPT_2_TEXT,
+                output_format=DEFAULT_PROMPT_2_OUTPUT_FORMAT,
+            ))
             db.session.commit()
             return redirect(url_for("portal.experiment", experiment_id=exp.id))
     return render_template("portal/new_experiment.html", user=user, error=error)
@@ -431,6 +450,7 @@ def configure_experiment(experiment_id: int):
     exp.random_seed = random_seed
     exp.dialogues_resolved_at = None
     db.session.commit()
+    _resolve_dialogues(exp)
 
     return redirect(url_for("portal.experiment", experiment_id=exp.id))
 
@@ -552,7 +572,7 @@ def new_prompt(experiment_id: int):
             except ValueError:
                 num_ctx = None
 
-            output_format = output_format_raw if output_format_raw in ("simplified", "annotated") else None
+            output_format = output_format_raw if output_format_raw in ("simplified", "detailed") else None
 
             db.session.add(Prompt(
                 experiment_id=exp.id,
@@ -602,7 +622,7 @@ def edit_prompt(experiment_id: int, prompt_id: int):
             prompt.prompt_text = prompt_text
             prompt.system_prompt = (request.form.get("system_prompt") or "").strip() or None
 
-            output_format = output_format_raw if output_format_raw in ("simplified", "annotated") else None
+            output_format = output_format_raw if output_format_raw in ("simplified", "detailed") else None
             prompt.output_format = output_format
 
             temp_raw = (request.form.get("temperature") or "").strip()

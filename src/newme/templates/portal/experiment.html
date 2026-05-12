@@ -23,7 +23,7 @@
   {# ── Dialogue sample ───────────────────────────────────────────── #}
   <section class="exp-section">
     <h2>Dialogue sample</h2>
-    <form method="post" action="{{ url_for('portal.configure_experiment', experiment_id=experiment.id) }}">
+    <form id="sample-form" method="post" action="{{ url_for('portal.configure_experiment', experiment_id=experiment.id) }}">
 
       <div class="exp-config-grid">
         <fieldset class="exp-fieldset">
@@ -54,6 +54,7 @@
             <label for="sample_size">Sample size</label>
             <input type="number" id="sample_size" name="sample_size" min="1"
               value="{{ experiment.sample_size or '' }}" placeholder="All">
+            <p class="exp-hint">Clear the field to include all dialogues.</p>
           </div>
           <div class="form-field">
             <label for="random_seed">Random seed</label>
@@ -63,19 +64,13 @@
         </div>
       </div>
 
-      <div class="exp-actions">
-        <button type="submit">Save configuration</button>
+      <p class="exp-resolved-note" id="sample-status">
         {% if experiment.dialogues_resolved_at %}
-        <span class="exp-resolved-note">
-          Sample resolved {{ experiment.dialogues_resolved_at.strftime('%Y-%m-%d %H:%M') }} &mdash;
-          {{ experiment.dialogues | length }} dialogue(s). Saving will clear it.
-        </span>
+          Sample resolved {{ experiment.dialogues_resolved_at.strftime('%Y-%m-%d %H:%M') }} &mdash; {{ experiment.dialogues | length }} dialogue(s).
+        {% else %}
+          Not yet resolved.
         {% endif %}
-      </div>
-    </form>
-
-    <form method="post" action="{{ url_for('portal.resolve_experiment', experiment_id=experiment.id) }}" style="margin-top:1rem">
-      <button type="submit">Resolve sample</button>
+      </p>
     </form>
   </section>
 
@@ -332,6 +327,29 @@
         });
     });
   });
+  // Auto-save dialogue sample on any change
+  (() => {
+    const form = document.getElementById("sample-form");
+    const status = document.getElementById("sample-status");
+    if (!form) return;
+    let debounceTimer = null;
+
+    function submit() {
+      status.textContent = "Saving…";
+      form.submit();
+    }
+
+    form.querySelectorAll("input[type=checkbox]").forEach(el => {
+      el.addEventListener("change", submit);
+    });
+
+    form.querySelectorAll("input[type=number]").forEach(el => {
+      el.addEventListener("input", () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(submit, 800);
+      });
+    });
+  })();
 })();
 </script>
 {% endblock %}
