@@ -22,8 +22,9 @@
 
   <div class="results-list">
     {% for result in results %}
-    <details class="result-item {% if result.error %}result-error{% elif result.output and result.output | length > 0 %}result-hit{% else %}result-empty{% endif %}">
-      <summary class="result-summary">
+    <a class="result-link-card result-item {% if result.error %}result-error{% elif result.output and result.output | length > 0 %}result-hit{% else %}result-empty{% endif %}"
+      href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id) }}">
+      <div class="result-summary">
         <span class="result-dialogue-id">{{ result.dialogue_external_id }}</span>
         <span class="result-corpus">{{ result.corpus_codename }}</span>
         {% if result.error %}
@@ -33,43 +34,8 @@
         {% else %}
           <span class="result-badge result-badge-text">Text</span>
         {% endif %}
-      </summary>
-
-      <div class="result-body">
-        {% if result.error %}
-          <p class="portal-error">{{ result.error }}</p>
-        {% elif result.output is string %}
-          <pre class="prompt-preview">{{ result.output }}</pre>
-        {% elif result.output %}
-          <div class="hit-list">
-            {% for hit in result.output %}
-            <div class="hit-card">
-              <div class="hit-card-top">
-                {% if hit.label is defined %}
-                <span class="hit-label">{{ hit.label }}</span>
-                {% endif %}
-                {% if hit.dialogue_id is defined %}
-                <span class="hit-meta">{{ hit.dialogue_id }}
-                  {% if hit.start_index is defined %}
-                    · utt {{ hit.start_index }}{% if hit.end_index is defined and hit.end_index != hit.start_index %}–{{ hit.end_index }}{% endif %}
-                  {% endif %}
-                  {% if hit.start_offset is defined %}
-                    · char {{ hit.start_offset }}–{{ hit.end_offset }}
-                  {% endif %}
-                </span>
-                {% endif %}
-              </div>
-              {% if hit.excerpt is defined and hit.excerpt %}
-              <pre class="hit-excerpt">{{ hit.excerpt }}</pre>
-              {% endif %}
-            </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <p class="portal-empty">No hits.</p>
-        {% endif %}
       </div>
-    </details>
+    </a>
     {% endfor %}
   </div>
 
