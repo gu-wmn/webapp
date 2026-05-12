@@ -232,7 +232,12 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
             end_offset = len(utterances[end_index]["text"])
 
         excerpt = str(hit.get("excerpt") or "")
-        faulty = bool(excerpt and excerpt not in utterances[start_index]["text"])
+        from .runner import _normalize_transcript
+        faulty = bool(
+            excerpt
+            and excerpt not in utterances[start_index]["text"]
+            and _normalize_transcript(excerpt) not in _normalize_transcript(utterances[start_index]["text"])
+        )
 
         labels.append(
             {

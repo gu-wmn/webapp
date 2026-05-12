@@ -108,6 +108,13 @@ def _get_output_schema(output_format: str) -> dict | None:
 
 _VALID_LABEL_NAMES = {"Trigger", "Indicator", "Negotiation"}
 
+# Matches BNC-style spaced contractions: "what 's" → "what's", "do n't" → "don't"
+_CONTRACTION_RE = re.compile(r"(\w) (n't|'s|'re|'m|'ve|'ll|'d)\b")
+
+
+def _normalize_transcript(text: str) -> str:
+    return _CONTRACTION_RE.sub(r"\1\2", text)
+
 
 def _run_regex(
     patterns_json: str,
@@ -149,17 +156,22 @@ def _run_regex(
 
     hits: list[dict[str, Any]] = []
     for idx, utt in enumerate(utterances):
-        text = utt.text
+        original = utt.text
+        normalized = _normalize_transcript(original)
+        matched_labels: set[str] = set()
         for label, pattern in compiled:
-            for m in pattern.finditer(text):
+            if label in matched_labels:
+                continue
+            if pattern.search(normalized):
+                matched_labels.add(label)
                 hits.append({
                     "dialogue_id": dialogue_external_id,
                     "start_index": idx,
                     "end_index": idx,
-                    "start_offset": m.start(),
-                    "end_offset": m.end(),
+                    "start_offset": 0,
+                    "end_offset": len(original),
                     "label": label,
-                    "excerpt": m.group(0),
+                    "excerpt": original,
                 })
 
     return hits
