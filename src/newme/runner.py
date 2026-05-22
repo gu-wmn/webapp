@@ -59,7 +59,11 @@ def assemble_prompt_text(
             else _detailed_default()
         )
     else:
-        appendix = ""
+        appendix = (
+            user_settings.effective_free_text_appendix
+            if user_settings
+            else ""
+        )
 
     if appendix:
         text = text + "\n\n" + appendix.strip()

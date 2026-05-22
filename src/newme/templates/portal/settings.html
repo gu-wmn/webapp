@@ -28,6 +28,19 @@
 
     <div class="settings-section">
       <div class="settings-section-label">
+        <h2>Free text appendix</h2>
+        <p>Appended to prompts using the <strong>None (free text)</strong> output format. Use this to add any shared closing instruction for unstructured responses. Leave empty to append nothing.</p>
+      </div>
+      <div class="form-field">
+        <textarea id="free_text_appendix" name="free_text_appendix" rows="5"
+          class="settings-code-field" placeholder="No free text appendix configured.">{{ (us.free_text_appendix if us and us.free_text_appendix) or free_text_appendix_default }}</textarea>
+      </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">
         <h2>Simplified output appendix</h2>
         <p>Appended to prompts using the <strong>Simplified</strong> output format. Instructs the model on the JSON structure to return for utterance-level candidate hits, including utterance indices and an exact quote.</p>
       </div>

@@ -21,6 +21,7 @@ from .models.experiment import (
     DEFAULT_PROMPT_2_OUTPUT_FORMAT,
     DEFAULT_PROMPT_2_TEXT,
     DETAILED_APPENDIX_DEFAULT,
+    FREE_TEXT_APPENDIX_DEFAULT,
     GLOBAL_TEMPLATE_DEFAULT,
     REGEX_FORMAT_HELP,
     REGEX_PATTERNS_DEFAULT,
@@ -444,6 +445,7 @@ def settings():
         user=user,
         us=user_settings,
         global_template_default=GLOBAL_TEMPLATE_DEFAULT,
+        free_text_appendix_default=FREE_TEXT_APPENDIX_DEFAULT,
         simplified_appendix_default=SIMPLIFIED_APPENDIX_DEFAULT,
         detailed_appendix_default=DETAILED_APPENDIX_DEFAULT,
         regex_patterns_default=REGEX_PATTERNS_DEFAULT,
@@ -461,6 +463,7 @@ def save_settings():
         db.session.add(user_settings)
 
     user_settings.global_template = (request.form.get("global_template") or "").strip() or None
+    user_settings.free_text_appendix = (request.form.get("free_text_appendix") or "").strip() or None
     user_settings.simplified_appendix = (request.form.get("simplified_appendix") or "").strip() or None
     user_settings.detailed_appendix = (request.form.get("detailed_appendix") or "").strip() or None
     user_settings.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None

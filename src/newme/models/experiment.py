@@ -20,6 +20,11 @@ GLOBAL_TEMPLATE_DEFAULT = (
     "requested output format exactly."
 )
 
+FREE_TEXT_APPENDIX_DEFAULT = (
+    "Respond in plain text. Be concise and ground each observation in specific "
+    "utterances from the dialogue. Avoid speculation beyond what the text supports."
+)
+
 SIMPLIFIED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
@@ -198,6 +203,7 @@ class UserSettings(db.Model):
 
     user_email = db.Column(db.String, primary_key=True)
     global_template = db.Column(db.Text, nullable=True)
+    free_text_appendix = db.Column(db.Text, nullable=True)
     simplified_appendix = db.Column(db.Text, nullable=True)
     detailed_appendix = db.Column('annotated_appendix', db.Text, nullable=True)
     regex_patterns = db.Column(db.Text, nullable=True)
@@ -205,6 +211,10 @@ class UserSettings(db.Model):
     @property
     def effective_global_template(self) -> str:
         return self.global_template if self.global_template is not None else GLOBAL_TEMPLATE_DEFAULT
+
+    @property
+    def effective_free_text_appendix(self) -> str:
+        return self.free_text_appendix if self.free_text_appendix is not None else FREE_TEXT_APPENDIX_DEFAULT
 
     @property
     def effective_simplified_appendix(self) -> str:

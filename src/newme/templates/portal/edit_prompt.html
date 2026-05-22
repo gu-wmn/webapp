@@ -84,7 +84,7 @@
           <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code>, <code>{regex_candidates}</code></p>
         </div>
 
-        <div class="form-field" id="appendix-section" style="display:none">
+        <div class="form-field" id="appendix-section">
           <label for="appendix_preview" class="label-with-action">
             Output format appendix
             <a href="{{ url_for('portal.settings') }}">Edit in Settings →</a>
@@ -188,6 +188,7 @@
 })();
 
 (() => {
+  const freeTextAppendix = {{ (user_settings.effective_free_text_appendix if user_settings else '') | tojson }};
   const simplifiedAppendix = {{ (user_settings.effective_simplified_appendix if user_settings else '') | tojson }};
   const detailedAppendix = {{ (user_settings.effective_detailed_appendix if user_settings else '') | tojson }};
   const outputFormatSelect = document.getElementById("output_format");
@@ -198,13 +199,12 @@
     const fmt = outputFormatSelect.value;
     if (fmt === "simplified") {
       appendixTextarea.value = simplifiedAppendix;
-      appendixSection.style.display = "";
     } else if (fmt === "detailed") {
       appendixTextarea.value = detailedAppendix;
-      appendixSection.style.display = "";
     } else {
-      appendixSection.style.display = "none";
+      appendixTextarea.value = freeTextAppendix;
     }
+    appendixSection.style.display = "";
   }
 
   outputFormatSelect.addEventListener("change", updateAppendix);
