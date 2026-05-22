@@ -767,6 +767,17 @@ a.diag-id:focus-visible {
   color: var(--muted);
 }
 
+.form-field label.label-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.form-field label.label-with-action a {
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
 .form-field input {
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1070,7 +1081,15 @@ a.button:hover {
 }
 
 textarea[readonly] {
-  background: color-mix(in srgb, var(--paper) 72%, #000 4%);
+  background: var(--bg);
+  border-color: var(--line);
+  color: var(--muted);
+  cursor: default;
+  resize: none;
+}
+
+textarea[readonly]:focus {
+  outline: none;
 }
 
 .button-secondary-sm {
@@ -1116,6 +1135,11 @@ textarea[readonly] {
 .prompt-form-right {
   display: flex;
   flex-direction: column;
+}
+
+.prompt-form-right .form-field + .form-field {
+  border-top: 1px solid var(--line);
+  padding-top: 1.1rem;
 }
 
 .form-field textarea {

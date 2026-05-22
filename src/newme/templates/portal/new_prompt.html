@@ -62,14 +62,16 @@
 
       <div class="prompt-form-right">
         <div class="form-field">
-          <label for="global_template">Global prompt template</label>
+          <label for="global_template" class="label-with-action">
+            Global prompt template
+            <a href="{{ url_for('portal.settings') }}">Edit in Settings →</a>
+          </label>
           <textarea id="global_template" rows="5" readonly
             placeholder="No global prompt template is configured.">{{ user_settings.effective_global_template if user_settings else '' }}</textarea>
           <label class="exp-check prompt-inline-toggle">
             <input type="checkbox" id="include_global_template" name="include_global_template" checked>
             Enable global prompt template for this prompt
           </label>
-          <p class="exp-hint"><a href="{{ url_for('portal.settings') }}">Edit in Settings →</a></p>
         </div>
 
         <div class="form-field">
@@ -80,9 +82,11 @@
         </div>
 
         <div class="form-field" id="appendix-section" style="display:none">
-          <label for="appendix_preview">Output format appendix</label>
+          <label for="appendix_preview" class="label-with-action">
+            Output format appendix
+            <a href="{{ url_for('portal.settings') }}">Edit in Settings →</a>
+          </label>
           <textarea id="appendix_preview" rows="6" readonly></textarea>
-          <p class="exp-hint"><a href="{{ url_for('portal.settings') }}">Edit in Settings →</a></p>
         </div>
       </div>
 
