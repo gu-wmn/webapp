@@ -680,6 +680,7 @@ def api_models():
 def new_prompt(experiment_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+    user_settings = db.session.get(UserSettings, user)
 
     error = None
     if request.method == "POST":
@@ -719,7 +720,7 @@ def new_prompt(experiment_id: int):
                 name=name,
                 host=host or None,
                 model=model or "—",
-                include_global_template=True,
+                include_global_template=request.form.get("include_global_template") == "on",
                 output_format=output_format,
                 prompt_text=prompt_text,
                 temperature=temperature,
@@ -732,6 +733,7 @@ def new_prompt(experiment_id: int):
         "portal/new_prompt.html",
         user=user,
         experiment=exp,
+        user_settings=user_settings,
         error=error,
     )
 

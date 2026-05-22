@@ -62,10 +62,27 @@
 
       <div class="prompt-form-right">
         <div class="form-field">
+          <label for="global_template">Global prompt template</label>
+          <textarea id="global_template" rows="5" readonly
+            placeholder="No global prompt template is configured.">{{ user_settings.effective_global_template if user_settings else '' }}</textarea>
+          <label class="exp-check prompt-inline-toggle">
+            <input type="checkbox" id="include_global_template" name="include_global_template" checked>
+            Enable global prompt template for this prompt
+          </label>
+          <p class="exp-hint"><a href="{{ url_for('portal.settings') }}">Edit in Settings →</a></p>
+        </div>
+
+        <div class="form-field">
           <label for="prompt_text">Main prompt text</label>
           <textarea id="prompt_text" name="prompt_text" rows="12" required
             placeholder="Use {dialogue} to insert the dialogue text."></textarea>
           <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code>, <code>{regex_candidates}</code></p>
+        </div>
+
+        <div class="form-field" id="appendix-section" style="display:none">
+          <label for="appendix_preview">Output format appendix</label>
+          <textarea id="appendix_preview" rows="6" readonly></textarea>
+          <p class="exp-hint"><a href="{{ url_for('portal.settings') }}">Edit in Settings →</a></p>
         </div>
       </div>
 
@@ -153,6 +170,30 @@
   hostSelect.addEventListener("change", () => {
     if (hostSelect.value) loadModels(hostSelect.value);
   });
+})();
+
+(() => {
+  const simplifiedAppendix = {{ (user_settings.effective_simplified_appendix if user_settings else '') | tojson }};
+  const detailedAppendix = {{ (user_settings.effective_detailed_appendix if user_settings else '') | tojson }};
+  const outputFormatSelect = document.getElementById("output_format");
+  const appendixSection = document.getElementById("appendix-section");
+  const appendixTextarea = document.getElementById("appendix_preview");
+
+  function updateAppendix() {
+    const fmt = outputFormatSelect.value;
+    if (fmt === "simplified") {
+      appendixTextarea.value = simplifiedAppendix;
+      appendixSection.style.display = "";
+    } else if (fmt === "detailed") {
+      appendixTextarea.value = detailedAppendix;
+      appendixSection.style.display = "";
+    } else {
+      appendixSection.style.display = "none";
+    }
+  }
+
+  outputFormatSelect.addEventListener("change", updateAppendix);
+  updateAppendix();
 })();
 </script>
 {% endblock %}
