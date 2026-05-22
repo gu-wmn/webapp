@@ -363,6 +363,7 @@ def new_experiment():
                 output_format=DEFAULT_PROMPT_2_OUTPUT_FORMAT,
             ))
             db.session.commit()
+            _resolve_dialogues(exp)
             return redirect(url_for("portal.experiment", experiment_id=exp.id))
     return render_template("portal/new_experiment.html", user=user, error=error)
 
