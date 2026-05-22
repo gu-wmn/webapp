@@ -40,12 +40,9 @@ DETAILED_APPENDIX_DEFAULT = (
     'Each item must have:\n'
     '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
     '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
-    '  - char_start_index (integer): 0-based character offset into the start utterance text\n'
-    '  - char_end_index (integer): 0-based exclusive character offset into the end utterance text\n'
     '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - quote (string): the exact text covered by the indices\n'
+    '  - quote (string): the exact verbatim text from the utterance(s) that motivated the label\n'
     '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n\n'
-    'The quote must exactly match the indexed span.\n'
     'If no WMN is found, return: {"hits": []}'
 )
 
@@ -116,12 +113,11 @@ DEFAULT_PROMPT_2_TEXT = (
     "confirm the WMN and classify it as NON (non-understanding) or DIN "
     "(disagreement), or Other if neither clearly applies.\n\n"
     "For each candidate, work through the steps above. Confirm or reject. "
-    "For confirmed WMNs, identify the Trigger word or phrase with its precise "
-    "character-level location, the Indicator utterance, and all Negotiation "
-    "utterances. Reject any Indicator that does not have a clear Trigger and "
-    "Negotiation. Use utterance_start_index and utterance_end_index to refer to "
-    "dialogue.utterances, and use character offsets within the utterance text. "
-    "char_end_index must be exclusive."
+    "For confirmed WMNs, identify the Trigger word or phrase, the Indicator "
+    "utterance, and all Negotiation utterances. Reject any Indicator that does "
+    "not have a clear Trigger and Negotiation. Use utterance_start_index and "
+    "utterance_end_index to refer to dialogue.utterances. For quote, copy the "
+    "exact verbatim text from the utterance(s) that motivated the label."
 )
 
 REGEX_FORMAT_HELP = (

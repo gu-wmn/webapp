@@ -158,52 +158,13 @@ def _validate_result_hits(
             })
             continue
 
-        if output_format == "simplified":
-            utterance_text = _utterance_range_text(utterances, start_index, end_index)
-            if quote not in utterance_text:
-                issues.append({
-                    "severity": "warning",
-                    "message": (
-                        f"Hit {hit_index} quote does not occur in the spanned utterance text: "
-                        f"{quote!r}"
-                    ),
-                })
-            continue
-
-        start_offset = _hit_int(hit, "char_start_index", "start_offset")
-        end_offset = _hit_int(hit, "char_end_index", "end_offset")
-        if start_offset is None or end_offset is None:
-            issues.append({
-                "severity": "error",
-                "message": f"Hit {hit_index} is missing char span indices.",
-            })
-            continue
-        if start_offset < 0 or end_offset < start_offset:
-            issues.append({
-                "severity": "error",
-                "message": f"Hit {hit_index} has an invalid char span.",
-            })
-            continue
-        if start_offset > len(utterances[start_index]["text"]) or end_offset > len(utterances[end_index]["text"]):
-            issues.append({
-                "severity": "error",
-                "message": f"Hit {hit_index} char span points outside the utterance text.",
-            })
-            continue
-
-        span_text = _span_text_from_utterances(
-            utterances,
-            start_index,
-            end_index,
-            start_offset,
-            end_offset,
-        )
-        if quote != span_text:
+        utterance_text = _utterance_range_text(utterances, start_index, end_index)
+        if quote not in utterance_text:
             issues.append({
                 "severity": "warning",
                 "message": (
-                    f"Hit {hit_index} quote does not exactly match the indexed span. "
-                    f"Quote: {quote!r} Span: {span_text!r}"
+                    f"Hit {hit_index} quote does not occur in the spanned utterance text: "
+                    f"{quote!r}"
                 ),
             })
 
@@ -344,6 +305,57 @@ def _sequence_label_payload(sequence) -> list[dict[str, Any]]:
     return labels
 
 
+def _derive_spans_from_quote(
+    utterances: list[dict[str, str]],
+    start_index: int,
+    end_index: int,
+    quote: str,
+) -> list[tuple[int, int, int, int]]:
+    """Find all occurrences of quote in utterances[start_index..end_index].
+
+    Returns a list of (utt_start_idx, char_start, utt_end_idx, char_end) tuples.
+    char_start is the 0-based offset in utt_start_idx's text.
+    char_end is the exclusive offset in utt_end_idx's text.
+    """
+    if not quote:
+        return []
+
+    # Build concatenated text and record where each utterance starts within it.
+    utt_starts: list[tuple[int, int]] = []  # (utterance_index, start_pos_in_concat)
+    parts: list[str] = []
+    pos = 0
+    for idx in range(start_index, end_index + 1):
+        utt_starts.append((idx, pos))
+        parts.append(utterances[idx]["text"])
+        pos += len(utterances[idx]["text"]) + 1  # +1 for the "\n" separator
+
+    concat = "\n".join(parts)
+
+    def pos_to_utt(p: int) -> tuple[int, int] | None:
+        for utt_idx, utt_pos in utt_starts:
+            utt_len = len(utterances[utt_idx]["text"])
+            if utt_pos <= p < utt_pos + utt_len:
+                return (utt_idx, p - utt_pos)
+        return None  # falls on a "\n" separator or out of range
+
+    results: list[tuple[int, int, int, int]] = []
+    search_from = 0
+    while True:
+        found = concat.find(quote, search_from)
+        if found == -1:
+            break
+        # Use found_end - 1 (last char of match) to avoid landing on a separator.
+        start_info = pos_to_utt(found)
+        end_info = pos_to_utt(found + len(quote) - 1)
+        if start_info is not None and end_info is not None:
+            utt_s, char_s = start_info
+            utt_e, char_e_last = end_info
+            results.append((utt_s, char_s, utt_e, char_e_last + 1))
+        search_from = found + 1
+
+    return results
+
+
 def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -> list[dict[str, Any]]:
     if not isinstance(result.output, list):
         return []
@@ -362,33 +374,37 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
             continue
         if end_index is None:
             end_index = start_index
-        if start_index < 0 or end_index < 0:
-            continue
-        if end_index < start_index:
+        if start_index < 0 or end_index < 0 or end_index < start_index:
             continue
         if start_index >= len(utterances) or end_index >= len(utterances):
             continue
 
-        start_offset = _hit_int(hit, "char_start_index", "start_offset")
-        end_offset = _hit_int(hit, "char_end_index", "end_offset")
-        if start_offset is None:
-            start_offset = 0
-        if end_offset is None:
-            end_offset = len(utterances[end_index]["text"])
-
         excerpt = _hit_text(hit, "quote", "excerpt")
+        wmn_type = str(hit.get("wmn_type") or "").strip()
 
-        labels.append(
-            {
+        occurrences = _derive_spans_from_quote(utterances, start_index, end_index, excerpt)
+        if occurrences:
+            for utt_s, char_s, utt_e, char_e in occurrences:
+                labels.append({
+                    "name": name,
+                    "utterance_start_index": utt_s,
+                    "utterance_end_index": utt_e,
+                    "char_start_index": char_s,
+                    "char_end_index": char_e,
+                    "quote": excerpt,
+                    "wmn_type": wmn_type,
+                })
+        else:
+            # Quote not locatable; fall back to highlighting the full utterance range.
+            labels.append({
                 "name": name,
                 "utterance_start_index": start_index,
                 "utterance_end_index": end_index,
-                "char_start_index": start_offset,
-                "char_end_index": end_offset,
+                "char_start_index": 0,
+                "char_end_index": len(utterances[end_index]["text"]),
                 "quote": excerpt,
-                "wmn_type": str(hit.get("wmn_type") or "").strip(),
-            }
-        )
+                "wmn_type": wmn_type,
+            })
 
     return labels
 

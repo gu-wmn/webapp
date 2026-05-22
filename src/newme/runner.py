@@ -123,8 +123,6 @@ def _get_output_schema(output_format: str) -> dict | None:
                         "properties": {
                             "utterance_start_index": {"type": "integer"},
                             "utterance_end_index": {"type": "integer"},
-                            "char_start_index": {"type": "integer"},
-                            "char_end_index": {"type": "integer"},
                             "label": {"type": "string"},
                             "quote": {"type": "string"},
                             "wmn_type": {"type": "string"},
@@ -132,8 +130,6 @@ def _get_output_schema(output_format: str) -> dict | None:
                         "required": [
                             "utterance_start_index",
                             "utterance_end_index",
-                            "char_start_index",
-                            "char_end_index",
                             "label",
                             "quote",
                             "wmn_type",
@@ -159,6 +155,27 @@ def _normalize_transcript(text: str) -> str:
 
 def _serialize_hits_payload(hits: list[dict[str, Any]]) -> str:
     return json.dumps({"hits": hits}, ensure_ascii=False, indent=2)
+
+
+def _filter_valid_hits(hits: list, utterances: list) -> list:
+    """Drop hits whose quote cannot be located in their stated utterance range."""
+    valid = []
+    n = len(utterances)
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        try:
+            start = int(hit.get("utterance_start_index") or hit.get("start_index") or 0)
+            end = int(hit.get("utterance_end_index") or hit.get("end_index") or start)
+        except (TypeError, ValueError):
+            continue
+        quote = str(hit.get("quote") or hit.get("excerpt") or "")
+        if not quote or start < 0 or end < start or end >= n:
+            continue
+        range_text = "\n".join(utterances[i].text for i in range(start, end + 1))
+        if quote in range_text:
+            valid.append(hit)
+    return valid
 
 
 def _run_regex(
@@ -259,7 +276,7 @@ def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: lis
     return _serialize_hits_payload(result.output if isinstance(result.output, list) else [])
 
 
-def _get_previous_output(prompt, dialogue_external_id: str) -> str:
+def _get_previous_output(prompt, dialogue_external_id: str, utterances: list) -> str:
     from .models.experiment import Prompt, Run, RunResult
 
     if prompt.position <= 1:
@@ -292,8 +309,8 @@ def _get_previous_output(prompt, dialogue_external_id: str) -> str:
     if not prev_result or prev_result.output is None:
         return _serialize_hits_payload([])
 
-    hits = prev_result.output if isinstance(prev_result.output, list) else []
-    return _serialize_hits_payload(hits)
+    raw_hits = prev_result.output if isinstance(prev_result.output, list) else []
+    return _serialize_hits_payload(_filter_valid_hits(raw_hits, utterances))
 
 
 def execute_run(run_id: int, app) -> None:
@@ -482,7 +499,7 @@ def _run_worker(run_id: int, app) -> None:
                             exp_dialogue.corpus_codename,
                         )
                         previous_output = _get_previous_output(
-                            prompt, exp_dialogue.dialogue_external_id
+                            prompt, exp_dialogue.dialogue_external_id, utterances
                         )
                         regex_candidates = _get_regex_candidates(
                             experiment, exp_dialogue.dialogue_external_id, utterances
