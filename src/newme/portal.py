@@ -680,7 +680,7 @@ def api_models():
 def new_prompt(experiment_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
-    user_settings = db.session.get(UserSettings, user)
+    user_settings = db.session.get(UserSettings, user) or UserSettings()
 
     error = None
     if request.method == "POST":
@@ -745,7 +745,7 @@ def edit_prompt(experiment_id: int, prompt_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
     prompt = Prompt.query.filter_by(id=prompt_id, experiment_id=exp.id).first_or_404()
-    user_settings = db.session.get(UserSettings, user)
+    user_settings = db.session.get(UserSettings, user) or UserSettings()
 
     error = None
     if request.method == "POST":
