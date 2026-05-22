@@ -87,6 +87,128 @@ def _hit_text(hit: dict[str, Any], new_key: str, old_key: str) -> str:
     return str(value or "")
 
 
+def _span_text_from_utterances(
+    utterances: list[dict[str, str]],
+    start_index: int,
+    end_index: int,
+    start_offset: int,
+    end_offset: int,
+) -> str:
+    if start_index == end_index:
+        return utterances[start_index]["text"][start_offset:end_offset]
+
+    parts = [utterances[start_index]["text"][start_offset:]]
+    for idx in range(start_index + 1, end_index):
+        parts.append(utterances[idx]["text"])
+    parts.append(utterances[end_index]["text"][:end_offset])
+    return "\n".join(parts)
+
+
+def _utterance_range_text(
+    utterances: list[dict[str, str]],
+    start_index: int,
+    end_index: int,
+) -> str:
+    return "\n".join(utterances[idx]["text"] for idx in range(start_index, end_index + 1))
+
+
+def _validate_result_hits(
+    result_output: Any,
+    utterances: list[dict[str, str]],
+    *,
+    output_format: str | None,
+) -> list[dict[str, str]]:
+    if not isinstance(result_output, list) or not utterances:
+        return []
+
+    issues: list[dict[str, str]] = []
+    for hit_index, hit in enumerate(result_output, start=1):
+        if not isinstance(hit, dict):
+            continue
+
+        start_index = _hit_int(hit, "utterance_start_index", "start_index")
+        end_index = _hit_int(hit, "utterance_end_index", "end_index")
+        quote = _hit_text(hit, "quote", "excerpt")
+
+        if start_index is None:
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} is missing utterance_start_index.",
+            })
+            continue
+        if end_index is None:
+            end_index = start_index
+        if start_index < 0 or end_index < 0 or end_index < start_index:
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} has an invalid utterance span.",
+            })
+            continue
+        if start_index >= len(utterances) or end_index >= len(utterances):
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} points outside the dialogue utterances.",
+            })
+            continue
+        if not quote:
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} is missing quote.",
+            })
+            continue
+
+        if output_format == "simplified":
+            utterance_text = _utterance_range_text(utterances, start_index, end_index)
+            if quote not in utterance_text:
+                issues.append({
+                    "severity": "warning",
+                    "message": (
+                        f"Hit {hit_index} quote does not occur in the spanned utterance text: "
+                        f"{quote!r}"
+                    ),
+                })
+            continue
+
+        start_offset = _hit_int(hit, "char_start_index", "start_offset")
+        end_offset = _hit_int(hit, "char_end_index", "end_offset")
+        if start_offset is None or end_offset is None:
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} is missing char span indices.",
+            })
+            continue
+        if start_offset < 0 or end_offset < start_offset:
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} has an invalid char span.",
+            })
+            continue
+        if start_offset > len(utterances[start_index]["text"]) or end_offset > len(utterances[end_index]["text"]):
+            issues.append({
+                "severity": "error",
+                "message": f"Hit {hit_index} char span points outside the utterance text.",
+            })
+            continue
+
+        span_text = _span_text_from_utterances(
+            utterances,
+            start_index,
+            end_index,
+            start_offset,
+            end_offset,
+        )
+        if quote != span_text:
+            issues.append({
+                "severity": "warning",
+                "message": (
+                    f"Hit {hit_index} quote does not exactly match the indexed span. "
+                    f"Quote: {quote!r} Span: {span_text!r}"
+                ),
+            })
+
+    return issues
+
+
 
 def _annotate_dialogue_utterances(
     utterances: list[dict[str, str]],
@@ -808,6 +930,11 @@ def regex_run_result_dialogue(experiment_id: int, result_id: int):
 
     utterances = _load_dialogue_utterances(result.corpus_codename, result.dialogue_external_id)
     llm_labels = _result_label_payload(result, utterances)
+    llm_validation_issues = _validate_result_hits(
+        result.output,
+        utterances,
+        output_format="detailed",
+    )
     llm_utterances: list[dict[str, str]] = []
     llm_label_links: list[dict[str, str]] = []
     if utterances:
@@ -856,6 +983,7 @@ def regex_run_result_dialogue(experiment_id: int, result_id: int):
         result=result,
         utterances_missing=not utterances,
         llm_hit_count=len(llm_labels),
+        llm_validation_issues=llm_validation_issues,
         llm_utterances=llm_utterances,
         llm_labels=llm_labels,
         llm_label_links=llm_label_links,
@@ -1103,6 +1231,11 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
 
     utterances = _load_dialogue_utterances(result.corpus_codename, result.dialogue_external_id)
     llm_labels = _result_label_payload(result, utterances)
+    llm_validation_issues = _validate_result_hits(
+        result.output,
+        utterances,
+        output_format=prompt.output_format,
+    )
     llm_utterances: list[dict[str, str]] = []
     llm_label_links: list[dict[str, str]] = []
     if utterances:
@@ -1160,6 +1293,7 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         result=result,
         utterances_missing=not utterances,
         llm_hit_count=llm_hit_count,
+        llm_validation_issues=llm_validation_issues,
         llm_utterances=llm_utterances,
         llm_labels=llm_labels,
         llm_label_links=llm_label_links,
