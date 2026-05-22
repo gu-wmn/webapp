@@ -16,7 +16,7 @@ def assemble_prompt_text(
 ) -> str:
     parts = []
 
-    if user_settings and user_settings.global_template:
+    if prompt.include_global_template and user_settings and user_settings.global_template:
         parts.append(user_settings.global_template.strip())
 
     parts.append(prompt.prompt_text.strip())
@@ -454,10 +454,7 @@ def _run_worker(run_id: int, app) -> None:
                             prompt, dialogue_text, previous_output, user_settings, regex_candidates
                         )
 
-                        messages = []
-                        if prompt.system_prompt:
-                            messages.append({"role": "system", "content": prompt.system_prompt})
-                        messages.append({"role": "user", "content": prompt_text})
+                        messages = [{"role": "user", "content": prompt_text}]
 
                         chat_kwargs: dict = {
                             "model": prompt.model,

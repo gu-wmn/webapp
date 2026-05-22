@@ -162,9 +162,11 @@
           {% if prompt.num_ctx %}
             {{ prompt_config_row("Context", prompt.num_ctx) }}
           {% endif %}
-          {{ prompt_config_row("Global prompt", user_settings.global_template if user_settings else none, "prompt-config-code") }}
-          {{ prompt_config_row("System prompt", prompt.system_prompt, "prompt-config-code") }}
-          {{ prompt_config_row("Custom prompt", prompt.prompt_text, "prompt-config-code") }}
+          {{ prompt_config_row("Global prompt template", "Enabled" if prompt.include_global_template else "Disabled") }}
+          {% if prompt.include_global_template %}
+            {{ prompt_config_row("Global prompt template text", user_settings.global_template if user_settings else none, "prompt-config-code") }}
+          {% endif %}
+          {{ prompt_config_row("Main prompt text", prompt.prompt_text, "prompt-config-code") }}
         </div>
 
         {# ── Run controls ── #}

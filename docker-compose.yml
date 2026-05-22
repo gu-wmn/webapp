@@ -12,5 +12,6 @@ services:
       OLLAMA_HOSTS: ${OLLAMA_HOSTS:-merl|http://merl.clasp.gu.se:11434,lark|http://lark.clasp.gu.se:11434,localhost|http://127.0.0.1:11434}
     volumes:
       - ./data:/data
+      - ./migrations:/srv/migrations
     command: gunicorn --bind=0.0.0.0:8060 newme.wsgi:app
     restart: unless-stopped

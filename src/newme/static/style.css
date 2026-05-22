@@ -1065,6 +1065,14 @@ a.button:hover {
   font-size: 0.8rem;
 }
 
+.prompt-inline-toggle {
+  margin-top: 0.6rem;
+}
+
+textarea[readonly] {
+  background: color-mix(in srgb, var(--paper) 72%, #000 4%);
+}
+
 .button-secondary-sm {
   background: none;
   border: 1px solid var(--accent);

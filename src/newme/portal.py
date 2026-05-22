@@ -350,6 +350,7 @@ def new_experiment():
                 name=DEFAULT_PROMPT_1_NAME,
                 host=DEFAULT_PROMPT_1_HOST,
                 model=DEFAULT_PROMPT_1_MODEL,
+                include_global_template=True,
                 prompt_text=DEFAULT_PROMPT_1_TEXT,
                 output_format=DEFAULT_PROMPT_1_OUTPUT_FORMAT,
             ))
@@ -359,6 +360,7 @@ def new_experiment():
                 name=DEFAULT_PROMPT_2_NAME,
                 host=DEFAULT_PROMPT_2_HOST,
                 model=DEFAULT_PROMPT_2_MODEL,
+                include_global_template=True,
                 prompt_text=DEFAULT_PROMPT_2_TEXT,
                 output_format=DEFAULT_PROMPT_2_OUTPUT_FORMAT,
             ))
@@ -559,8 +561,6 @@ def new_prompt(experiment_id: int):
                 or 0
             ) + 1
 
-            system_prompt = (request.form.get("system_prompt") or "").strip() or None
-
             temp_raw = (request.form.get("temperature") or "").strip()
             try:
                 temperature = float(temp_raw) if temp_raw else None
@@ -581,8 +581,8 @@ def new_prompt(experiment_id: int):
                 name=name,
                 host=host or None,
                 model=model or "—",
+                include_global_template=True,
                 output_format=output_format,
-                system_prompt=system_prompt,
                 prompt_text=prompt_text,
                 temperature=temperature,
                 num_ctx=num_ctx,
@@ -605,6 +605,7 @@ def edit_prompt(experiment_id: int, prompt_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
     prompt = Prompt.query.filter_by(id=prompt_id, experiment_id=exp.id).first_or_404()
+    user_settings = db.session.get(UserSettings, user)
 
     error = None
     if request.method == "POST":
@@ -621,7 +622,8 @@ def edit_prompt(experiment_id: int, prompt_id: int):
             prompt.host = host or None
             prompt.model = model or "—"
             prompt.prompt_text = prompt_text
-            prompt.system_prompt = (request.form.get("system_prompt") or "").strip() or None
+            prompt.include_global_template = request.form.get("include_global_template") == "on"
+            prompt.system_prompt = None
 
             output_format = output_format_raw if output_format_raw in ("simplified", "detailed") else None
             prompt.output_format = output_format
@@ -646,6 +648,7 @@ def edit_prompt(experiment_id: int, prompt_id: int):
         user=user,
         experiment=exp,
         prompt=prompt,
+        user_settings=user_settings,
         error=error,
     )
 

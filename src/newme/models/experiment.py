@@ -268,6 +268,7 @@ class Prompt(db.Model):
     name = db.Column(db.String, nullable=False)
     host = db.Column(db.String, nullable=True)
     model = db.Column(db.String, nullable=False)
+    include_global_template = db.Column(db.Boolean, nullable=False, default=True)
     system_prompt = db.Column(db.Text, nullable=True)
     prompt_text = db.Column(db.Text, nullable=False)
     output_format = db.Column(db.String, nullable=True)  # "simplified", "detailed", or None

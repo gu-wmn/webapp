@@ -64,13 +64,18 @@
 
       <div class="prompt-form-right">
         <div class="form-field">
-          <label for="system_prompt">System prompt <span class="field-hint">(optional)</span></label>
-          <textarea id="system_prompt" name="system_prompt" rows="4"
-            placeholder="You are a linguistics researcher...">{{ prompt.system_prompt or '' }}</textarea>
+          <label for="global_template">Global prompt template</label>
+          <textarea id="global_template" rows="5" readonly
+            placeholder="No global prompt template is configured.">{{ (user_settings.global_template if user_settings and user_settings.global_template) or '' }}</textarea>
+          <label class="exp-check prompt-inline-toggle">
+            <input type="checkbox" id="include_global_template" name="include_global_template"
+              {% if prompt.include_global_template %}checked{% endif %}>
+            Enable global prompt template for this prompt
+          </label>
         </div>
 
         <div class="form-field">
-          <label for="prompt_text">Prompt template</label>
+          <label for="prompt_text">Main prompt text</label>
           <textarea id="prompt_text" name="prompt_text" rows="12" required
             placeholder="Use {dialogue} to insert the dialogue text.">{{ prompt.prompt_text }}</textarea>
           <p class="exp-hint">Available placeholders: <code>{dialogue}</code>, <code>{previous_output}</code>, <code>{regex_candidates}</code></p>
