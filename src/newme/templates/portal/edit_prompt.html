@@ -66,7 +66,7 @@
         <div class="form-field">
           <label for="global_template">Global prompt template</label>
           <textarea id="global_template" rows="5" readonly
-            placeholder="No global prompt template is configured.">{{ (user_settings.global_template if user_settings and user_settings.global_template) or '' }}</textarea>
+            placeholder="No global prompt template is configured.">{{ user_settings.effective_global_template if user_settings else '' }}</textarea>
           <label class="exp-check prompt-inline-toggle">
             <input type="checkbox" id="include_global_template" name="include_global_template"
               {% if prompt.include_global_template %}checked{% endif %}>

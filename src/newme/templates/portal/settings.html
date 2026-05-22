@@ -20,7 +20,7 @@
       </div>
       <div class="form-field">
         <textarea id="global_template" name="global_template" rows="5"
-          placeholder="e.g. You are a linguistics researcher specialising in conversation analysis…">{{ (us.global_template if us and us.global_template) or '' }}</textarea>
+          class="settings-code-field">{{ (us.global_template if us and us.global_template) or global_template_default }}</textarea>
       </div>
     </div>
 

@@ -16,8 +16,14 @@ def assemble_prompt_text(
 ) -> str:
     parts = []
 
-    if prompt.include_global_template and user_settings and user_settings.global_template:
-        parts.append(user_settings.global_template.strip())
+    if prompt.include_global_template:
+        template = (
+            user_settings.effective_global_template
+            if user_settings
+            else _global_template_default()
+        )
+        if template:
+            parts.append(template.strip())
 
     parts.append(prompt.prompt_text.strip())
 
@@ -50,6 +56,11 @@ def assemble_prompt_text(
 def _simplified_default() -> str:
     from .models.experiment import SIMPLIFIED_APPENDIX_DEFAULT
     return SIMPLIFIED_APPENDIX_DEFAULT
+
+
+def _global_template_default() -> str:
+    from .models.experiment import GLOBAL_TEMPLATE_DEFAULT
+    return GLOBAL_TEMPLATE_DEFAULT
 
 
 def _detailed_default() -> str:

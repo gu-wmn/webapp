@@ -11,6 +11,15 @@ VALID_WMN_TYPES = [
     ("WMN: other", "Other"),
 ]
 
+GLOBAL_TEMPLATE_DEFAULT = (
+    "You are assisting with linguistic analysis of dialogues to identify and assess "
+    "possible Word Meaning Negotiations (WMNs). Work only from the dialogue and any "
+    "explicitly provided context. Stay conservative, do not invent evidence, and do "
+    "not guess spans, labels, or classifications when the dialogue does not support "
+    "them. When spans are requested, keep them as precise as possible. Follow the "
+    "requested output format exactly."
+)
+
 SIMPLIFIED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
@@ -180,6 +189,10 @@ class UserSettings(db.Model):
     simplified_appendix = db.Column(db.Text, nullable=True)
     detailed_appendix = db.Column('annotated_appendix', db.Text, nullable=True)
     regex_patterns = db.Column(db.Text, nullable=True)
+
+    @property
+    def effective_global_template(self) -> str:
+        return self.global_template if self.global_template is not None else GLOBAL_TEMPLATE_DEFAULT
 
     @property
     def effective_simplified_appendix(self) -> str:
