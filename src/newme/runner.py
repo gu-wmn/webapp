@@ -94,16 +94,12 @@ def _get_output_schema(output_format: str) -> dict | None:
                         "properties": {
                             "utterance_start_index": {"type": "integer"},
                             "utterance_end_index": {"type": "integer"},
-                            "char_start_index": {"type": "integer"},
-                            "char_end_index": {"type": "integer"},
                             "label": {"type": "string"},
                             "quote": {"type": "string"},
                         },
                         "required": [
                             "utterance_start_index",
                             "utterance_end_index",
-                            "char_start_index",
-                            "char_end_index",
                             "label",
                             "quote",
                         ],

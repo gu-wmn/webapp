@@ -25,11 +25,8 @@ SIMPLIFIED_APPENDIX_DEFAULT = (
     'Each item must have:\n'
     '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
     '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
-    '  - char_start_index (integer): 0-based character offset into the start utterance text\n'
-    '  - char_end_index (integer): 0-based exclusive character offset into the end utterance text\n'
     '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - quote (string): the exact text covered by the indices\n\n'
-    'The quote must exactly match the indexed span.\n'
+    '  - quote (string): the exact text that motivated the candidate hit\n\n'
     'If no WMN is found, return: {"hits": []}'
 )
 
@@ -62,11 +59,11 @@ DEFAULT_PROMPT_1_TEXT = (
     "meaning of a word or phrase. It may take the form of a direct request for "
     "clarification, a challenge to how a word is being used, or an expression of "
     "non-understanding tied to a specific word or phrase.\n\n"
-    "Read the dialogue JSON and identify all spans that could be Indicators. "
+    "Read the dialogue JSON and identify all utterances that could be Indicators. "
     "Include uncertain cases — a later stage will determine which are genuine. "
     "Prefer inclusion over exclusion. Use utterance_start_index and "
-    "utterance_end_index to refer to dialogue.utterances, and use character offsets "
-    "within the utterance text. char_end_index must be exclusive."
+    "utterance_end_index to refer to dialogue.utterances. For quote, include the "
+    "exact text in the utterance that motivated the candidate hit."
 )
 
 DEFAULT_PROMPT_2_NAME = "WMN validation"
@@ -75,7 +72,8 @@ DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_2_OUTPUT_FORMAT = "detailed"
 DEFAULT_PROMPT_2_TEXT = (
     "The inputs below are JSON. The dialogue is in dialogue.utterances. The previous "
-    "stage output is candidate JSON that may be empty.\n\n"
+    "stage output is candidate JSON that may be empty. Those candidates are "
+    "utterance-level hints, not final character-level spans.\n\n"
     "Dialogue JSON:\n"
     "{dialogue}\n\n"
     "Previous stage JSON:\n"
