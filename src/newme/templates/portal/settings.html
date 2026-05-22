@@ -29,7 +29,7 @@
     <div class="settings-section">
       <div class="settings-section-label">
         <h2>Simplified output appendix</h2>
-        <p>Appended to prompts using the <strong>Simplified</strong> output format. Instructs the model on the JSON structure to return (utterance-level spans, no character offsets).</p>
+        <p>Appended to prompts using the <strong>Simplified</strong> output format. Instructs the model on the JSON structure to return for candidate spans, including utterance indices, character indices, and exact quotes.</p>
       </div>
       <div class="form-field">
         <textarea id="simplified_appendix" name="simplified_appendix" rows="8"
@@ -42,7 +42,7 @@
     <div class="settings-section">
       <div class="settings-section-label">
         <h2>Detailed output appendix</h2>
-        <p>Appended to prompts using the <strong>Detailed</strong> output format. Instructs the model to return character-level spans, excerpts, and WMN type.</p>
+        <p>Appended to prompts using the <strong>Detailed</strong> output format. Instructs the model to return span indices, exact quotes, and WMN type.</p>
       </div>
       <div class="form-field">
         <textarea id="detailed_appendix" name="detailed_appendix" rows="12"

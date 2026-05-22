@@ -73,6 +73,20 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _hit_int(hit: dict[str, Any], new_key: str, old_key: str) -> int | None:
+    value = hit.get(new_key)
+    if value is None:
+        value = hit.get(old_key)
+    return _safe_int(value)
+
+
+def _hit_text(hit: dict[str, Any], new_key: str, old_key: str) -> str:
+    value = hit.get(new_key)
+    if value is None:
+        value = hit.get(old_key)
+    return str(value or "")
+
+
 
 def _annotate_dialogue_utterances(
     utterances: list[dict[str, str]],
@@ -86,10 +100,10 @@ def _annotate_dialogue_utterances(
     label_id = 0
 
     for label in labels:
-        start_index = _safe_int(label.get("start_index"))
-        end_index = _safe_int(label.get("end_index"))
-        start_offset_raw = _safe_int(label.get("start_offset"))
-        end_offset_raw = _safe_int(label.get("end_offset"))
+        start_index = _hit_int(label, "utterance_start_index", "start_index")
+        end_index = _hit_int(label, "utterance_end_index", "end_index")
+        start_offset_raw = _hit_int(label, "char_start_index", "start_offset")
+        end_offset_raw = _hit_int(label, "char_end_index", "end_offset")
         name = label.get("name")
 
         if (
@@ -112,7 +126,7 @@ def _annotate_dialogue_utterances(
         end_span = "</span>"
         label_links.append({
             "name": str(name),
-            "excerpt": str(label.get("excerpt") or "").strip(),
+            "excerpt": _hit_text(label, "quote", "excerpt").strip(),
             "anchor_id": anchor_id,
             "wmn_type": str(label.get("wmn_type") or "").strip(),
         })
@@ -197,11 +211,11 @@ def _sequence_label_payload(sequence) -> list[dict[str, Any]]:
         labels.append(
             {
                 "name": label.name,
-                "start_index": label.start_index,
-                "end_index": label.end_index,
-                "start_offset": label.start_offset,
-                "end_offset": label.end_offset,
-                "excerpt": label.excerpt,
+                "utterance_start_index": label.start_index,
+                "utterance_end_index": label.end_index,
+                "char_start_index": label.start_offset,
+                "char_end_index": label.end_offset,
+                "quote": label.excerpt,
             }
         )
     return labels
@@ -219,8 +233,8 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
         if name not in _VALID_LABEL_NAMES:
             continue
 
-        start_index = _safe_int(hit.get("start_index"))
-        end_index = _safe_int(hit.get("end_index"))
+        start_index = _hit_int(hit, "utterance_start_index", "start_index")
+        end_index = _hit_int(hit, "utterance_end_index", "end_index")
         if start_index is None:
             continue
         if end_index is None:
@@ -232,23 +246,23 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
         if start_index >= len(utterances) or end_index >= len(utterances):
             continue
 
-        start_offset = _safe_int(hit.get("start_offset"))
-        end_offset = _safe_int(hit.get("end_offset"))
+        start_offset = _hit_int(hit, "char_start_index", "start_offset")
+        end_offset = _hit_int(hit, "char_end_index", "end_offset")
         if start_offset is None:
             start_offset = 0
         if end_offset is None:
             end_offset = len(utterances[end_index]["text"])
 
-        excerpt = str(hit.get("excerpt") or "")
+        excerpt = _hit_text(hit, "quote", "excerpt")
 
         labels.append(
             {
                 "name": name,
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_offset": start_offset,
-                "end_offset": end_offset,
-                "excerpt": excerpt,
+                "utterance_start_index": start_index,
+                "utterance_end_index": end_index,
+                "char_start_index": start_offset,
+                "char_end_index": end_offset,
+                "quote": excerpt,
                 "wmn_type": str(hit.get("wmn_type") or "").strip(),
             }
         )
@@ -950,8 +964,8 @@ def _llm_utterance_set(result: RunResult) -> set[int]:
     for hit in result.output:
         if not isinstance(hit, dict):
             continue
-        start = hit.get("start_index")
-        end = hit.get("end_index")
+        start = hit.get("utterance_start_index", hit.get("start_index"))
+        end = hit.get("utterance_end_index", hit.get("end_index"))
         if start is None:
             continue
         end = end if end is not None else start

@@ -7,8 +7,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-def format_dialogue(utterances) -> str:
-    return "\n".join(f"[{u.position}] {u.author}: {u.text}" for u in utterances)
+def format_dialogue(utterances, dialogue_external_id: str, corpus_codename: str) -> str:
+    payload = {
+        "dialogue": {
+            "dialogue_id": dialogue_external_id,
+            "corpus_codename": corpus_codename,
+            "utterances": [
+                {
+                    "utterance_index": u.position,
+                    "speaker": u.author,
+                    "text": u.text,
+                }
+                for u in utterances
+            ],
+        }
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def assemble_prompt_text(
@@ -78,12 +92,21 @@ def _get_output_schema(output_format: str) -> dict | None:
                     "items": {
                         "type": "object",
                         "properties": {
-                            "dialogue_id": {"type": "string"},
-                            "start_index": {"type": "integer"},
-                            "end_index": {"type": "integer"},
+                            "utterance_start_index": {"type": "integer"},
+                            "utterance_end_index": {"type": "integer"},
+                            "char_start_index": {"type": "integer"},
+                            "char_end_index": {"type": "integer"},
                             "label": {"type": "string"},
+                            "quote": {"type": "string"},
                         },
-                        "required": ["dialogue_id", "start_index", "end_index", "label"],
+                        "required": [
+                            "utterance_start_index",
+                            "utterance_end_index",
+                            "char_start_index",
+                            "char_end_index",
+                            "label",
+                            "quote",
+                        ],
                     },
                 }
             },
@@ -98,18 +121,22 @@ def _get_output_schema(output_format: str) -> dict | None:
                     "items": {
                         "type": "object",
                         "properties": {
-                            "dialogue_id": {"type": "string"},
-                            "start_index": {"type": "integer"},
-                            "end_index": {"type": "integer"},
-                            "start_offset": {"type": "integer"},
-                            "end_offset": {"type": "integer"},
+                            "utterance_start_index": {"type": "integer"},
+                            "utterance_end_index": {"type": "integer"},
+                            "char_start_index": {"type": "integer"},
+                            "char_end_index": {"type": "integer"},
                             "label": {"type": "string"},
-                            "excerpt": {"type": "string"},
+                            "quote": {"type": "string"},
                             "wmn_type": {"type": "string"},
                         },
                         "required": [
-                            "dialogue_id", "start_index", "end_index",
-                            "start_offset", "end_offset", "label", "excerpt",
+                            "utterance_start_index",
+                            "utterance_end_index",
+                            "char_start_index",
+                            "char_end_index",
+                            "label",
+                            "quote",
+                            "wmn_type",
                         ],
                     },
                 }
@@ -128,6 +155,10 @@ _CONTRACTION_RE = re.compile(r"(\w) (n't|'s|'re|'m|'ve|'ll|'d)\b")
 
 def _normalize_transcript(text: str) -> str:
     return _CONTRACTION_RE.sub(r"\1\2", text)
+
+
+def _serialize_hits_payload(hits: list[dict[str, Any]]) -> str:
+    return json.dumps({"hits": hits}, ensure_ascii=False, indent=2)
 
 
 def _run_regex(
@@ -155,37 +186,49 @@ def _run_regex(
     if not isinstance(rules, list):
         raise ValueError("Regex patterns must be a JSON array.")
 
-    compiled: list[tuple[str, re.Pattern]] = []
+    compiled: list[tuple[str, str, re.Pattern]] = []
     for rule in rules:
         label = rule.get("label", "")
         if label not in _VALID_LABEL_NAMES:
             continue
+        pattern_text = str(rule.get("pattern") or "")
         flags_str = rule.get("flags", "")
         re_flags = 0
         if "i" in flags_str:
             re_flags |= re.IGNORECASE
         if "s" in flags_str:
             re_flags |= re.DOTALL
-        compiled.append((label, re.compile(rule["pattern"], re_flags)))
+        compiled.append((label, pattern_text, re.compile(pattern_text, re_flags)))
 
     hits: list[dict[str, Any]] = []
     for idx, utt in enumerate(utterances):
         original = utt.text
         normalized = _normalize_transcript(original)
         matched_labels: set[str] = set()
-        for label, pattern in compiled:
+        for label, pattern_text, pattern in compiled:
             if label in matched_labels:
                 continue
-            if pattern.search(normalized):
+            match = pattern.search(original)
+            if match is None:
+                match = pattern.search(normalized)
+            if match is not None:
                 matched_labels.add(label)
+                if pattern.search(original):
+                    start_index = match.start()
+                    end_index = match.end()
+                    quote = original[start_index:end_index]
+                else:
+                    start_index = 0
+                    end_index = len(original)
+                    quote = original
                 hits.append({
-                    "dialogue_id": dialogue_external_id,
-                    "start_index": idx,
-                    "end_index": idx,
-                    "start_offset": 0,
-                    "end_offset": len(original),
+                    "utterance_start_index": idx,
+                    "utterance_end_index": idx,
+                    "char_start_index": start_index,
+                    "char_end_index": end_index,
                     "label": label,
-                    "excerpt": original,
+                    "quote": quote,
+                    "matched_by": [pattern_text],
                 })
 
     return hits
@@ -195,7 +238,7 @@ def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: lis
     from .models.experiment import RegexRun, RegexRunResult
 
     if not experiment.regex_enabled:
-        return ""
+        return _serialize_hits_payload([])
 
     regex_run = (
         RegexRun.query.filter_by(experiment_id=experiment.id, status="complete")
@@ -203,7 +246,7 @@ def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: lis
         .first()
     )
     if not regex_run:
-        return ""
+        return _serialize_hits_payload([])
 
     result = RegexRunResult.query.filter_by(
         regex_run_id=regex_run.id,
@@ -211,45 +254,23 @@ def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: lis
     ).first()
 
     if not result or not result.output:
-        return ""
+        return _serialize_hits_payload([])
 
-    utt_map = {u.position: u for u in utterances}
-    seen: set[int] = set()
-    hit_lines = []
-    for hit in result.output:
-        idx = hit.get("start_index")
-        if idx is None or idx in seen:
-            continue
-        seen.add(idx)
-        utt = utt_map.get(idx)
-        if utt:
-            hit_lines.append(f"[{idx}] {utt.author}: {utt.text}  [{hit.get('label', '')}]")
-
-    if not hit_lines:
-        return ""
-
-    lines = [
-        "The following utterances were flagged by a regex pre-filter as likely "
-        "Indicators (high recall, low precision — treat as hints, not ground truth):",
-        *hit_lines,
-        "These are starting points. Look for Indicators the pre-filter may have "
-        "missed, and do not assume every flagged utterance is genuinely an Indicator.",
-    ]
-    return "\n".join(lines) + "\n"
+    return _serialize_hits_payload(result.output if isinstance(result.output, list) else [])
 
 
 def _get_previous_output(prompt, dialogue_external_id: str) -> str:
     from .models.experiment import Prompt, Run, RunResult
 
     if prompt.position <= 1:
-        return ""
+        return _serialize_hits_payload([])
 
     prev_prompt = Prompt.query.filter_by(
         experiment_id=prompt.experiment_id,
         position=prompt.position - 1,
     ).first()
     if not prev_prompt:
-        return ""
+        return _serialize_hits_payload([])
 
     prev_run = (
         Run.query.filter_by(
@@ -261,7 +282,7 @@ def _get_previous_output(prompt, dialogue_external_id: str) -> str:
         .first()
     )
     if not prev_run:
-        return ""
+        return _serialize_hits_payload([])
 
     prev_result = RunResult.query.filter_by(
         run_id=prev_run.id,
@@ -269,9 +290,10 @@ def _get_previous_output(prompt, dialogue_external_id: str) -> str:
     ).first()
 
     if not prev_result or prev_result.output is None:
-        return ""
+        return _serialize_hits_payload([])
 
-    return json.dumps(prev_result.output)
+    hits = prev_result.output if isinstance(prev_result.output, list) else []
+    return _serialize_hits_payload(hits)
 
 
 def execute_run(run_id: int, app) -> None:
@@ -454,7 +476,11 @@ def _run_worker(run_id: int, app) -> None:
                             exp_dialogue.dialogue_external_id,
                         )
                     else:
-                        dialogue_text = format_dialogue(utterances)
+                        dialogue_text = format_dialogue(
+                            utterances,
+                            exp_dialogue.dialogue_external_id,
+                            exp_dialogue.corpus_codename,
+                        )
                         previous_output = _get_previous_output(
                             prompt, exp_dialogue.dialogue_external_id
                         )
@@ -487,22 +513,6 @@ def _run_worker(run_id: int, app) -> None:
                         if schema:
                             parsed = json.loads(raw_response)
                             hits = parsed.get("hits", [])
-                            if prompt.output_format == "simplified" and hits:
-                                utt_map = {
-                                    u.position: f"[{u.position}] {u.author}: {u.text}"
-                                    for u in utterances
-                                }
-                                for hit in hits:
-                                    start = hit.get("start_index")
-                                    end = hit.get("end_index")
-                                    if start is not None:
-                                        end = end if end is not None else start
-                                        texts = [
-                                            utt_map[i]
-                                            for i in range(start, end + 1)
-                                            if i in utt_map
-                                        ]
-                                        hit["excerpt"] = "\n".join(texts)
                             output = hits
                         else:
                             output = raw_response

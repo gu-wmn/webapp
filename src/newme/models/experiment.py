@@ -23,24 +23,27 @@ GLOBAL_TEMPLATE_DEFAULT = (
 SIMPLIFIED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
-    '  - dialogue_id (string)\n'
-    '  - start_index (integer): utterance index where the span starts\n'
-    '  - end_index (integer): utterance index where the span ends\n'
-    '  - label (string): "Trigger", "Indicator", or "Negotiation"\n\n'
+    '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
+    '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
+    '  - char_start_index (integer): 0-based character offset into the start utterance text\n'
+    '  - char_end_index (integer): 0-based exclusive character offset into the end utterance text\n'
+    '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
+    '  - quote (string): the exact text covered by the indices\n\n'
+    'The quote must exactly match the indexed span.\n'
     'If no WMN is found, return: {"hits": []}'
 )
 
 DETAILED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
-    '  - dialogue_id (string)\n'
-    '  - start_index (integer): utterance index where the span starts\n'
-    '  - end_index (integer): utterance index where the span ends\n'
-    '  - start_offset (integer): character offset within the start utterance\n'
-    '  - end_offset (integer): character offset within the end utterance\n'
+    '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
+    '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
+    '  - char_start_index (integer): 0-based character offset into the start utterance text\n'
+    '  - char_end_index (integer): 0-based exclusive character offset into the end utterance text\n'
     '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - excerpt (string): the exact text of the matched span\n'
+    '  - quote (string): the exact text covered by the indices\n'
     '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n\n'
+    'The quote must exactly match the indexed span.\n'
     'If no WMN is found, return: {"hits": []}'
 )
 
@@ -49,15 +52,21 @@ DEFAULT_PROMPT_1_MODEL = "qwen3:30b"
 DEFAULT_PROMPT_1_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_1_OUTPUT_FORMAT = "simplified"
 DEFAULT_PROMPT_1_TEXT = (
+    "The inputs below are JSON. The dialogue is in dialogue.utterances. Regex "
+    "candidate hits are optional hints only and may be empty.\n\n"
+    "Dialogue JSON:\n"
+    "{dialogue}\n\n"
+    "Regex candidate JSON:\n"
+    "{regex_candidates}\n\n"
     "An Indicator is an utterance that signals a need to discuss or clarify the "
     "meaning of a word or phrase. It may take the form of a direct request for "
     "clarification, a challenge to how a word is being used, or an expression of "
     "non-understanding tied to a specific word or phrase.\n\n"
-    "{regex_candidates}\n"
-    "Read the dialogue below and identify all utterances that could be Indicators. "
+    "Read the dialogue JSON and identify all spans that could be Indicators. "
     "Include uncertain cases — a later stage will determine which are genuine. "
-    "Prefer inclusion over exclusion.\n\n"
-    "{dialogue}"
+    "Prefer inclusion over exclusion. Use utterance_start_index and "
+    "utterance_end_index to refer to dialogue.utterances, and use character offsets "
+    "within the utterance text. char_end_index must be exclusive."
 )
 
 DEFAULT_PROMPT_2_NAME = "WMN validation"
@@ -65,6 +74,12 @@ DEFAULT_PROMPT_2_MODEL = "llama3.3:70b-instruct-q4_K_M"
 DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_2_OUTPUT_FORMAT = "detailed"
 DEFAULT_PROMPT_2_TEXT = (
+    "The inputs below are JSON. The dialogue is in dialogue.utterances. The previous "
+    "stage output is candidate JSON that may be empty.\n\n"
+    "Dialogue JSON:\n"
+    "{dialogue}\n\n"
+    "Previous stage JSON:\n"
+    "{previous_output}\n\n"
     "You are reviewing candidate Indicator utterances to determine whether each "
     "belongs to a genuine Word Meaning Negotiation (WMN).\n\n"
     "A WMN occurs when a conversation shifts from its main topic to explicitly "
@@ -97,14 +112,13 @@ DEFAULT_PROMPT_2_TEXT = (
     "4. If all three parts are present and the meta-linguistic shift is clear, "
     "confirm the WMN and classify it as NON (non-understanding) or DIN "
     "(disagreement), or Other if neither clearly applies.\n\n"
-    "The following candidate Indicators were identified in the previous stage:\n"
-    "{previous_output}\n\n"
     "For each candidate, work through the steps above. Confirm or reject. "
     "For confirmed WMNs, identify the Trigger word or phrase with its precise "
     "character-level location, the Indicator utterance, and all Negotiation "
     "utterances. Reject any Indicator that does not have a clear Trigger and "
-    "Negotiation.\n\n"
-    "{dialogue}"
+    "Negotiation. Use utterance_start_index and utterance_end_index to refer to "
+    "dialogue.utterances, and use character offsets within the utterance text. "
+    "char_end_index must be exclusive."
 )
 
 REGEX_FORMAT_HELP = (
