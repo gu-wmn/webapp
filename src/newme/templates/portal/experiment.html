@@ -268,7 +268,13 @@
     if (!btn || btn.dataset.wired) return;
     btn.dataset.wired = "1";
     btn.addEventListener("click", () => {
-      if (!confirm("Abort this run? Any dialogues not yet processed will be skipped.")) {
+      if (!confirm(
+        "Abort this run?\n\n" +
+        "This stops the app from waiting on it and frees it up to start new work. " +
+        "Ollama itself doesn't support cancelling a request already in progress, though — " +
+        "dialogues currently being processed will likely keep running on the host until " +
+        "they finish on their own, and any results from them will be discarded."
+      )) {
         return;
       }
       btn.disabled = true;
