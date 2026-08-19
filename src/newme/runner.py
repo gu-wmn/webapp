@@ -642,50 +642,102 @@ def _run_worker(run_id: int, app) -> None:
                     )
 
             import httpx
+            import concurrent.futures
 
-            for exp_dialogue in dialogues:
-                db.session.refresh(run)
-                if run.status not in ("pending", "running"):
-                    # Aborted (or otherwise stopped) from another request while
-                    # this thread was working — stop instead of writing more
-                    # results onto a run that's no longer active.
-                    return
+            if is_regex:
+                # Pure CPU pattern matching, no network call to overlap —
+                # nothing to gain from parallelizing this path.
+                for exp_dialogue in dialogues:
+                    db.session.refresh(run)
+                    if run.status not in ("pending", "running"):
+                        return
 
-                output = None
-                raw_response = None
-                error_msg = None
-                char_count = None
-                started = time.monotonic()
+                    output = None
+                    error_msg = None
+                    char_count = None
+                    started = time.monotonic()
 
-                try:
-                    dialogue_obj = (
-                        db.session.query(Dialogue)
-                        .join(Corpus, Dialogue.corpus_id == Corpus.id)
-                        .filter(
-                            Corpus.codename == exp_dialogue.corpus_codename,
-                            Dialogue.external_id == exp_dialogue.dialogue_external_id,
+                    try:
+                        dialogue_obj = (
+                            db.session.query(Dialogue)
+                            .join(Corpus, Dialogue.corpus_id == Corpus.id)
+                            .filter(
+                                Corpus.codename == exp_dialogue.corpus_codename,
+                                Dialogue.external_id == exp_dialogue.dialogue_external_id,
+                            )
+                            .first()
                         )
-                        .first()
-                    )
-                    if dialogue_obj is None:
-                        raise ValueError(
-                            f"Dialogue {exp_dialogue.dialogue_external_id!r} not found in database"
+                        if dialogue_obj is None:
+                            raise ValueError(
+                                f"Dialogue {exp_dialogue.dialogue_external_id!r} not found in database"
+                            )
+
+                        utterances = (
+                            Utterance.query.filter_by(dialogue_id=dialogue_obj.id)
+                            .order_by(Utterance.position.asc())
+                            .all()
                         )
-
-                    utterances = (
-                        Utterance.query.filter_by(dialogue_id=dialogue_obj.id)
-                        .order_by(Utterance.position.asc())
-                        .all()
-                    )
-                    char_count = sum(len(u.text) for u in utterances)
-
-                    if is_regex:
+                        char_count = sum(len(u.text) for u in utterances)
                         output = _run_regex(
                             prompt.prompt_text,
                             utterances,
                             exp_dialogue.dialogue_external_id,
                         )
-                    else:
+                    except Exception as exc:
+                        error_msg = str(exc)
+
+                    db.session.add(RunResult(
+                        run_id=run.id,
+                        dialogue_external_id=exp_dialogue.dialogue_external_id,
+                        corpus_codename=exp_dialogue.corpus_codename,
+                        output=output,
+                        raw_response=None,
+                        error=error_msg,
+                        dialogue_char_count=char_count,
+                        duration_seconds=time.monotonic() - started,
+                    ))
+                    run.processed_count += 1
+                    db.session.commit()
+
+            else:
+                # Two phases, kept strictly separate so no worker thread ever
+                # touches db.session (Flask-SQLAlchemy sessions aren't safe to
+                # share across threads): first assemble every dialogue's
+                # request sequentially here (DB reads + prompt text, no
+                # network), then fire them all at Ollama at once and record
+                # results as they complete, in whatever order that turns out
+                # to be. The host's own OLLAMA_NUM_PARALLEL throttles actual
+                # concurrent execution — anything beyond that just queues
+                # server-side, so there's no need to cap dispatch to match it
+                # from this end.
+                jobs: list[dict[str, Any]] = []
+                for exp_dialogue in dialogues:
+                    db.session.refresh(run)
+                    if run.status not in ("pending", "running"):
+                        return
+
+                    try:
+                        dialogue_obj = (
+                            db.session.query(Dialogue)
+                            .join(Corpus, Dialogue.corpus_id == Corpus.id)
+                            .filter(
+                                Corpus.codename == exp_dialogue.corpus_codename,
+                                Dialogue.external_id == exp_dialogue.dialogue_external_id,
+                            )
+                            .first()
+                        )
+                        if dialogue_obj is None:
+                            raise ValueError(
+                                f"Dialogue {exp_dialogue.dialogue_external_id!r} not found in database"
+                            )
+
+                        utterances = (
+                            Utterance.query.filter_by(dialogue_id=dialogue_obj.id)
+                            .order_by(Utterance.position.asc())
+                            .all()
+                        )
+                        char_count = sum(len(u.text) for u in utterances)
+
                         dialogue_text = format_dialogue(
                             utterances,
                             exp_dialogue.dialogue_external_id,
@@ -705,73 +757,112 @@ def _run_worker(run_id: int, app) -> None:
                             regex_candidates,
                         )
 
-                        messages = [{"role": "user", "content": prompt_text}]
-
                         chat_kwargs: dict = {
                             "model": prompt.model,
-                            "messages": messages,
+                            "messages": [{"role": "user", "content": prompt_text}],
+                            "options": {
+                                "num_ctx": (
+                                    prompt.num_ctx if prompt.num_ctx is not None
+                                    else _adaptive_num_ctx(prompt_text)
+                                ),
+                                "temperature": (
+                                    prompt.temperature if prompt.temperature is not None
+                                    else DEFAULT_TEMPERATURE
+                                ),
+                            },
                         }
-                        options: dict = {
-                            "num_ctx": (
-                                prompt.num_ctx if prompt.num_ctx is not None
-                                else _adaptive_num_ctx(prompt_text)
-                            ),
-                        }
-                        options["temperature"] = (
-                            prompt.temperature if prompt.temperature is not None
-                            else DEFAULT_TEMPERATURE
-                        )
-                        chat_kwargs["options"] = options
                         if schema:
                             chat_kwargs["format"] = schema
 
-                        response = _chat_with_retry(client, chat_kwargs)
-                        raw_response = response.message.content
+                        jobs.append({
+                            "exp_dialogue": exp_dialogue,
+                            "chat_kwargs": chat_kwargs,
+                            "char_count": char_count,
+                        })
+                    except Exception as exc:
+                        # Couldn't even build a request for this dialogue
+                        # (e.g. missing from the DB) — nothing to dispatch,
+                        # record it immediately.
+                        db.session.add(RunResult(
+                            run_id=run.id,
+                            dialogue_external_id=exp_dialogue.dialogue_external_id,
+                            corpus_codename=exp_dialogue.corpus_codename,
+                            output=None,
+                            raw_response=None,
+                            error=str(exc),
+                            dialogue_char_count=None,
+                            duration_seconds=0.0,
+                        ))
+                        run.processed_count += 1
+                        run.last_error = None
+                        db.session.commit()
 
-                        if schema:
-                            parsed = json.loads(raw_response)
-                            hits = parsed.get("hits", [])
-                            output = hits
-                        else:
-                            output = raw_response
+                if jobs:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+                        future_to_job = {}
+                        for job in jobs:
+                            job["started"] = time.monotonic()
+                            future = executor.submit(_chat_with_retry, client, job["chat_kwargs"])
+                            future_to_job[future] = job
 
-                except httpx.TransportError as exc:
-                    # The only case that's actually a connectivity problem —
-                    # surfaced in the "Running" banner so it's visible before
-                    # the dialogue even finishes.
-                    error_msg = f"Lost connection to Ollama host at {host}: {exc}"
-                    run.last_error = error_msg
-                except json.JSONDecodeError as exc:
-                    # Ollama responded — this isn't a connection issue. An
-                    # empty raw_response (the common cause of this exact
-                    # error) usually means the model ran out of context
-                    # budget before producing any output.
-                    preview = (raw_response or "")[:200]
-                    error_msg = (
-                        f"Model output was not valid JSON ({exc}). "
-                        f"Raw response: {preview!r}"
-                    )
-                    run.last_error = None
-                except Exception as exc:
-                    # Also not a connection issue — some other failure
-                    # processing this one dialogue.
-                    error_msg = str(exc)
-                    run.last_error = None
-                else:
-                    run.last_error = None
+                        for future in concurrent.futures.as_completed(future_to_job):
+                            db.session.refresh(run)
+                            if run.status not in ("pending", "running"):
+                                return
 
-                db.session.add(RunResult(
-                    run_id=run.id,
-                    dialogue_external_id=exp_dialogue.dialogue_external_id,
-                    corpus_codename=exp_dialogue.corpus_codename,
-                    output=output,
-                    raw_response=raw_response,
-                    error=error_msg,
-                    dialogue_char_count=char_count,
-                    duration_seconds=time.monotonic() - started,
-                ))
-                run.processed_count += 1
-                db.session.commit()
+                            job = future_to_job[future]
+                            exp_dialogue = job["exp_dialogue"]
+                            output = None
+                            raw_response = None
+                            error_msg = None
+
+                            try:
+                                response = future.result()
+                                raw_response = response.message.content
+
+                                if schema:
+                                    parsed = json.loads(raw_response)
+                                    output = parsed.get("hits", [])
+                                else:
+                                    output = raw_response
+                            except httpx.TransportError as exc:
+                                # The only case that's actually a connectivity
+                                # problem — surfaced in the "Running" banner so
+                                # it's visible before the run even finishes.
+                                error_msg = f"Lost connection to Ollama host at {host}: {exc}"
+                                run.last_error = error_msg
+                            except json.JSONDecodeError as exc:
+                                # Ollama responded — this isn't a connection
+                                # issue. An empty raw_response (the common
+                                # cause of this exact error) usually means the
+                                # model ran out of context budget before
+                                # producing any output.
+                                preview = (raw_response or "")[:200]
+                                error_msg = (
+                                    f"Model output was not valid JSON ({exc}). "
+                                    f"Raw response: {preview!r}"
+                                )
+                                run.last_error = None
+                            except Exception as exc:
+                                # Also not a connection issue — some other
+                                # failure processing this one dialogue.
+                                error_msg = str(exc)
+                                run.last_error = None
+                            else:
+                                run.last_error = None
+
+                            db.session.add(RunResult(
+                                run_id=run.id,
+                                dialogue_external_id=exp_dialogue.dialogue_external_id,
+                                corpus_codename=exp_dialogue.corpus_codename,
+                                output=output,
+                                raw_response=raw_response,
+                                error=error_msg,
+                                dialogue_char_count=job["char_count"],
+                                duration_seconds=time.monotonic() - job["started"],
+                            ))
+                            run.processed_count += 1
+                            db.session.commit()
 
             run.status = "complete"
             run.completed_at = datetime.now(timezone.utc)
