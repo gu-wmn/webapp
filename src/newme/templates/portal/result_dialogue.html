@@ -52,6 +52,15 @@
   </div>
   {% endif %}
 
+  {% if llm_validation_issues %}
+  <details class="warning-callout warning-callout-folded">
+    <summary><strong>Output validation</strong></summary>
+    {% for issue in llm_validation_issues %}
+    <p>{{ issue.message }}</p>
+    {% endfor %}
+  </details>
+  {% endif %}
+
   <div class="portal-results-compare">
     <section class="panel portal-results-column">
       <div class="portal-column-above">
@@ -68,15 +77,6 @@
         <pre class="prompt-preview">{{ result.output }}</pre>
         {% elif not llm_labels %}
         <p class="portal-empty">No hits.</p>
-        {% endif %}
-
-        {% if llm_validation_issues %}
-        <div class="warning-callout" role="alert">
-          <p><strong>Output validation</strong></p>
-          {% for issue in llm_validation_issues %}
-          <p>{{ issue.message }}</p>
-          {% endfor %}
-        </div>
         {% endif %}
 
         {% if llm_label_links %}

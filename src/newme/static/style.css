@@ -407,6 +407,32 @@ body.modal-open {
   margin: 0.12rem 0;
 }
 
+.warning-callout-folded summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.warning-callout-folded summary::-webkit-details-marker {
+  display: none;
+}
+
+.warning-callout-folded summary::before {
+  content: "▸";
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.warning-callout-folded[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.warning-callout-folded p:first-of-type {
+  margin-top: 0.5rem;
+}
+
 .compact-summary {
   padding: 0.65rem 0.7rem;
   margin-bottom: 0.55rem;
