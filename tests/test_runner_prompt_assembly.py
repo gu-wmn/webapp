@@ -166,5 +166,42 @@ class PromptAssemblyTests(unittest.TestCase):
         self.assertNotIn(DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT, assembled)
 
 
+class AdaptiveNumCtxTests(unittest.TestCase):
+    def test_short_prompt_rounds_up_to_cover_the_output_reserve(self) -> None:
+        # A trivial prompt still needs enough room for the output reserve
+        # alone (2048 tokens), which rounds up to the next power of two.
+        from newme.runner import _adaptive_num_ctx
+
+        self.assertEqual(_adaptive_num_ctx("short prompt"), 4096)
+
+    def test_result_is_always_a_power_of_two(self) -> None:
+        from newme.runner import _adaptive_num_ctx
+
+        for length in (100, 5_000, 20_000, 100_000):
+            num_ctx = _adaptive_num_ctx("x" * length)
+            self.assertEqual(num_ctx & (num_ctx - 1), 0, f"{num_ctx} for length {length}")
+
+    def test_result_covers_input_plus_output_reserve(self) -> None:
+        from newme.runner import _adaptive_num_ctx, _CHARS_PER_TOKEN, _OUTPUT_TOKEN_RESERVE
+
+        text = "x" * 40_000
+        num_ctx = _adaptive_num_ctx(text)
+        needed = len(text) / _CHARS_PER_TOKEN + _OUTPUT_TOKEN_RESERVE
+
+        self.assertGreaterEqual(num_ctx, needed)
+        # A power of two rounds up by less than double what's actually needed.
+        self.assertLess(num_ctx / 2, needed)
+
+    def test_longer_prompt_never_yields_a_smaller_window(self) -> None:
+        from newme.runner import _adaptive_num_ctx
+
+        self.assertLessEqual(_adaptive_num_ctx("x" * 1_000), _adaptive_num_ctx("x" * 50_000))
+
+    def test_result_is_capped_at_the_maximum(self) -> None:
+        from newme.runner import _adaptive_num_ctx, _MAX_NUM_CTX
+
+        self.assertEqual(_adaptive_num_ctx("x" * 10_000_000), _MAX_NUM_CTX)
+
+
 if __name__ == "__main__":
     unittest.main()

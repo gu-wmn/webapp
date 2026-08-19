@@ -126,6 +126,45 @@ def assemble_prompt_text(
     return text
 
 
+# Rough, deliberately generous chars-per-token estimate for English text —
+# overestimating the input costs a little unused context; underestimating
+# truncates real dialogue, which is the failure this exists to prevent.
+_CHARS_PER_TOKEN = 4
+# Flat headroom reserved for the model's response (the JSON hits array, plus
+# whatever reasoning a model does before it) — the app never sets a
+# num_predict cap, so this is the only thing keeping the response from
+# crowding out context that's needed for the input.
+_OUTPUT_TOKEN_RESERVE = 2048
+_MIN_NUM_CTX = 2048
+_MAX_NUM_CTX = 131072
+
+# This is span extraction/classification against a fixed schema, not creative
+# generation — there's a defensible "right" answer for a given dialogue, so
+# the model should commit to its best read rather than sample around it. Not
+# 0 (fully greedy): a little randomness avoids the occasional repetition loop
+# greedy decoding can fall into on longer dialogues, at negligible cost to
+# run-to-run consistency.
+DEFAULT_TEMPERATURE = 0.1
+
+
+def _adaptive_num_ctx(prompt_text: str) -> int:
+    """Size the context window to the assembled prompt rather than trusting
+    whatever a model's own default happens to be — Ollama's defaults (often
+    2048-4096) silently truncate long dialogues instead of erroring, which
+    would quietly corrupt results. Only used when a prompt doesn't set its own
+    num_ctx override.
+
+    The total is rounded up to the next power of two, matching how context
+    windows are conventionally sized, and clamped to a sane range.
+    """
+    input_tokens = -(-len(prompt_text) // _CHARS_PER_TOKEN)  # ceil division
+    needed = input_tokens + _OUTPUT_TOKEN_RESERVE
+    num_ctx = 1
+    while num_ctx < needed:
+        num_ctx *= 2
+    return max(_MIN_NUM_CTX, min(num_ctx, _MAX_NUM_CTX))
+
+
 def _simplified_default() -> str:
     from .models.experiment import SIMPLIFIED_APPENDIX_DEFAULT
     return SIMPLIFIED_APPENDIX_DEFAULT
@@ -649,13 +688,17 @@ def _run_worker(run_id: int, app) -> None:
                             "model": prompt.model,
                             "messages": messages,
                         }
-                        options: dict = {}
-                        if prompt.temperature is not None:
-                            options["temperature"] = prompt.temperature
-                        if prompt.num_ctx is not None:
-                            options["num_ctx"] = prompt.num_ctx
-                        if options:
-                            chat_kwargs["options"] = options
+                        options: dict = {
+                            "num_ctx": (
+                                prompt.num_ctx if prompt.num_ctx is not None
+                                else _adaptive_num_ctx(prompt_text)
+                            ),
+                        }
+                        options["temperature"] = (
+                            prompt.temperature if prompt.temperature is not None
+                            else DEFAULT_TEMPERATURE
+                        )
+                        chat_kwargs["options"] = options
                         if schema:
                             chat_kwargs["format"] = schema
 
