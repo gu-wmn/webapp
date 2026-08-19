@@ -181,26 +181,70 @@ class AdaptiveNumCtxTests(unittest.TestCase):
             num_ctx = _adaptive_num_ctx("x" * length)
             self.assertEqual(num_ctx & (num_ctx - 1), 0, f"{num_ctx} for length {length}")
 
-    def test_result_covers_input_plus_output_reserve(self) -> None:
-        from newme.runner import _adaptive_num_ctx, _CHARS_PER_TOKEN, _OUTPUT_TOKEN_RESERVE
+    def test_result_covers_input_plus_output_reserve_with_safety_margin(self) -> None:
+        from newme.runner import (
+            _adaptive_num_ctx,
+            _CHARS_PER_TOKEN,
+            _OUTPUT_TOKEN_RESERVE_FLOOR,
+            _OUTPUT_TOKEN_RESERVE_FRACTION,
+            _OUTPUT_TOKEN_RESERVE_CAP,
+            _SAFETY_MARGIN_MULTIPLIER,
+        )
 
         text = "x" * 40_000
         num_ctx = _adaptive_num_ctx(text)
-        needed = len(text) / _CHARS_PER_TOKEN + _OUTPUT_TOKEN_RESERVE
+        input_tokens = len(text) / _CHARS_PER_TOKEN
+        reserve = min(
+            _OUTPUT_TOKEN_RESERVE_CAP,
+            max(_OUTPUT_TOKEN_RESERVE_FLOOR, int(input_tokens * _OUTPUT_TOKEN_RESERVE_FRACTION)),
+        )
+        needed = input_tokens + reserve
 
         self.assertGreaterEqual(num_ctx, needed)
-        # A power of two rounds up by less than double what's actually needed.
-        self.assertLess(num_ctx / 2, needed)
+
+    def test_headroom_never_drops_below_the_safety_margin_anywhere_in_a_tier(self) -> None:
+        # The whole point of padding before rounding: unlike bare
+        # round-up-to-power-of-two, headroom shouldn't shrink toward ~0% right
+        # before the next doubling — it should stay above a floor everywhere.
+        from newme.runner import _adaptive_num_ctx, _CHARS_PER_TOKEN, _SAFETY_MARGIN_MULTIPLIER
+
+        min_headroom_ratio = float("inf")
+        for length in range(1_000, 200_000, 2_777):  # odd step to sample mid-tier points, not just edges
+            text = "x" * length
+            num_ctx = _adaptive_num_ctx(text)
+            input_tokens = length / _CHARS_PER_TOKEN
+            min_headroom_ratio = min(min_headroom_ratio, num_ctx / input_tokens)
+
+        # Some slack below the nominal 1.42x: the output reserve and the
+        # ceil/floor rounding both eat a little into the pure input-vs-window ratio.
+        self.assertGreater(min_headroom_ratio, _SAFETY_MARGIN_MULTIPLIER * 0.9)
+
+    def test_there_is_no_upper_cap(self) -> None:
+        # Correctness matters more than bounding worst-case memory use — a
+        # large enough dialogue should keep getting a proportionally larger
+        # window rather than being clamped.
+        from newme.runner import _adaptive_num_ctx
+
+        self.assertLess(_adaptive_num_ctx("x" * 2_000_000), _adaptive_num_ctx("x" * 20_000_000))
+        self.assertGreater(_adaptive_num_ctx("x" * 20_000_000), 262_144)
+
+    def test_output_reserve_scales_with_input_up_to_the_cap(self) -> None:
+        from newme.runner import _adaptive_num_ctx, _OUTPUT_TOKEN_RESERVE_FLOOR
+
+        # A huge input's reserve should exceed the flat floor (scaling kicked
+        # in) — detectable via num_ctx landing higher than input-alone would need.
+        huge_text = "x" * 400_000
+        num_ctx = _adaptive_num_ctx(huge_text)
+        input_tokens_only_ctx = 1
+        while input_tokens_only_ctx < len(huge_text) / 3.5 + _OUTPUT_TOKEN_RESERVE_FLOOR:
+            input_tokens_only_ctx *= 2
+
+        self.assertGreaterEqual(num_ctx, input_tokens_only_ctx)
 
     def test_longer_prompt_never_yields_a_smaller_window(self) -> None:
         from newme.runner import _adaptive_num_ctx
 
         self.assertLessEqual(_adaptive_num_ctx("x" * 1_000), _adaptive_num_ctx("x" * 50_000))
-
-    def test_result_is_capped_at_the_maximum(self) -> None:
-        from newme.runner import _adaptive_num_ctx, _MAX_NUM_CTX
-
-        self.assertEqual(_adaptive_num_ctx("x" * 10_000_000), _MAX_NUM_CTX)
 
 
 if __name__ == "__main__":

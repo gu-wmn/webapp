@@ -126,17 +126,35 @@ def assemble_prompt_text(
     return text
 
 
-# Rough, deliberately generous chars-per-token estimate for English text —
-# overestimating the input costs a little unused context; underestimating
-# truncates real dialogue, which is the failure this exists to prevent.
-_CHARS_PER_TOKEN = 4
-# Flat headroom reserved for the model's response (the JSON hits array, plus
+# Chars-per-token estimate for English text. A flat 4 is the usual rule of
+# thumb for prose, but a large share of every prompt here is JSON (the
+# serialized dialogue, which dominates character count on longer dialogues) —
+# punctuation, quotes, and repeated keys tokenize less efficiently than prose,
+# commonly closer to 3.3-3.7 chars/token. Using 3.5 errs toward overestimating
+# the token count, which is the safe direction: it costs a little unused
+# context, where underestimating costs truncated dialogue.
+_CHARS_PER_TOKEN = 3.5
+# Headroom reserved for the model's response (the JSON hits array, plus
 # whatever reasoning a model does before it) — the app never sets a
 # num_predict cap, so this is the only thing keeping the response from
-# crowding out context that's needed for the input.
-_OUTPUT_TOKEN_RESERVE = 2048
+# crowding out context that's needed for the input. Scales with input size
+# (longer dialogues tend to surface more candidate WMNs, so more hits to
+# report) on top of a flat floor, capped so it doesn't balloon on huge inputs.
+_OUTPUT_TOKEN_RESERVE_FLOOR = 2048
+_OUTPUT_TOKEN_RESERVE_FRACTION = 0.08
+_OUTPUT_TOKEN_RESERVE_CAP = 8192
 _MIN_NUM_CTX = 2048
-_MAX_NUM_CTX = 131072
+# Rounding the raw estimate straight up to the next power of two gives a
+# sawtooth headroom pattern: generous right after crossing a boundary, but
+# shrinking toward almost nothing right before the next one — a prompt that
+# needs 131,000 tokens gets the same 131,072 window as one that needs 65,537,
+# leaving it almost no margin for estimation error. Padding the estimate by
+# this factor before rounding guarantees a floor on headroom everywhere in a
+# tier, not just at its start — 1.42x reproduces a real-world scaling table
+# (16K/32K/64K/128K/256K windows at the 8K/20K/45K/90K/... input marks) almost
+# exactly. No upper cap: correctness (not truncating) matters more than
+# bounding worst-case memory use, so a large enough dialogue keeps doubling.
+_SAFETY_MARGIN_MULTIPLIER = 1.42
 
 # This is span extraction/classification against a fixed schema, not creative
 # generation — there's a defensible "right" answer for a given dialogue, so
@@ -154,15 +172,20 @@ def _adaptive_num_ctx(prompt_text: str) -> int:
     would quietly corrupt results. Only used when a prompt doesn't set its own
     num_ctx override.
 
-    The total is rounded up to the next power of two, matching how context
-    windows are conventionally sized, and clamped to a sane range.
+    The padded total is rounded up to the next power of two, matching how
+    context windows are conventionally sized. No upper bound — only a floor
+    for degenerate (near-empty) prompts.
     """
-    input_tokens = -(-len(prompt_text) // _CHARS_PER_TOKEN)  # ceil division
-    needed = input_tokens + _OUTPUT_TOKEN_RESERVE
+    input_tokens = -int(-len(prompt_text) // _CHARS_PER_TOKEN)  # ceil division
+    output_reserve = min(
+        _OUTPUT_TOKEN_RESERVE_CAP,
+        max(_OUTPUT_TOKEN_RESERVE_FLOOR, int(input_tokens * _OUTPUT_TOKEN_RESERVE_FRACTION)),
+    )
+    needed = (input_tokens + output_reserve) * _SAFETY_MARGIN_MULTIPLIER
     num_ctx = 1
     while num_ctx < needed:
         num_ctx *= 2
-    return max(_MIN_NUM_CTX, min(num_ctx, _MAX_NUM_CTX))
+    return max(_MIN_NUM_CTX, num_ctx)
 
 
 def _simplified_default() -> str:
@@ -713,11 +736,27 @@ def _run_worker(run_id: int, app) -> None:
                             output = raw_response
 
                 except httpx.TransportError as exc:
+                    # The only case that's actually a connectivity problem —
+                    # surfaced in the "Running" banner so it's visible before
+                    # the dialogue even finishes.
                     error_msg = f"Lost connection to Ollama host at {host}: {exc}"
                     run.last_error = error_msg
+                except json.JSONDecodeError as exc:
+                    # Ollama responded — this isn't a connection issue. An
+                    # empty raw_response (the common cause of this exact
+                    # error) usually means the model ran out of context
+                    # budget before producing any output.
+                    preview = (raw_response or "")[:200]
+                    error_msg = (
+                        f"Model output was not valid JSON ({exc}). "
+                        f"Raw response: {preview!r}"
+                    )
+                    run.last_error = None
                 except Exception as exc:
+                    # Also not a connection issue — some other failure
+                    # processing this one dialogue.
                     error_msg = str(exc)
-                    run.last_error = error_msg
+                    run.last_error = None
                 else:
                     run.last_error = None
 
