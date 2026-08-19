@@ -27,7 +27,7 @@ class GroupLabelLinksByWmnTests(unittest.TestCase):
 
         groups = _group_label_links_by_wmn(links)
 
-        self.assertEqual(groups, [{"group": None, "links": links}])
+        self.assertEqual(groups, [{"group": None, "wmn_type": "", "links": links}])
 
     def test_distinct_wmn_groups_are_split_in_first_seen_order(self) -> None:
         links = [
@@ -53,6 +53,29 @@ class GroupLabelLinksByWmnTests(unittest.TestCase):
 
         self.assertEqual([g["group"] for g in groups], [1, None])
         self.assertEqual([l["excerpt"] for l in groups[1]["links"]], ["b"])
+
+    def test_group_type_is_taken_from_the_indicator_hit(self) -> None:
+        links = [
+            {"name": "Trigger", "excerpt": "a", "wmn_group": 1, "wmn_type": "other"},
+            {"name": "Indicator", "excerpt": "b", "wmn_group": 1, "wmn_type": "non-understanding"},
+            {"name": "Negotiation", "excerpt": "c", "wmn_group": 1, "wmn_type": "disagreement"},
+        ]
+
+        groups = _group_label_links_by_wmn(links)
+
+        self.assertEqual(groups[0]["wmn_type"], "non-understanding")
+        self.assertTrue(all(l["wmn_type"] == "non-understanding" for l in groups[0]["links"]))
+
+    def test_group_type_falls_back_to_any_hit_when_indicator_has_none(self) -> None:
+        links = [
+            {"name": "Trigger", "excerpt": "a", "wmn_group": 1, "wmn_type": "other"},
+            {"name": "Indicator", "excerpt": "b", "wmn_group": 1, "wmn_type": ""},
+        ]
+
+        groups = _group_label_links_by_wmn(links)
+
+        self.assertEqual(groups[0]["wmn_type"], "other")
+        self.assertTrue(all(l["wmn_type"] == "other" for l in groups[0]["links"]))
 
 
 class WmnGroupPassthroughTests(unittest.TestCase):

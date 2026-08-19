@@ -115,6 +115,64 @@ class ResultValidationTests(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertIn("does not exactly match", issues[0]["message"])
 
+    def test_flags_wmn_group_with_disagreeing_wmn_type(self) -> None:
+        utterances = [
+            {"author": "A", "text": "Define free market."},
+            {"author": "B", "text": "What do you mean by that?"},
+        ]
+        result_output = [
+            {
+                "label": "Trigger",
+                "utterance_start_index": 0,
+                "utterance_end_index": 0,
+                "quote": "free market",
+                "wmn_group": 1,
+                "wmn_type": "other",
+            },
+            {
+                "label": "Indicator",
+                "utterance_start_index": 1,
+                "utterance_end_index": 1,
+                "quote": "What do you mean",
+                "wmn_group": 1,
+                "wmn_type": "non-understanding",
+            },
+        ]
+
+        issues = _validate_result_hits(result_output, utterances, output_format="detailed")
+
+        self.assertEqual(len(issues), 1)
+        self.assertIn("wmn_group 1", issues[0]["message"])
+        self.assertIn("disagree on wmn_type", issues[0]["message"])
+
+    def test_no_warning_when_wmn_group_types_agree(self) -> None:
+        utterances = [
+            {"author": "A", "text": "Define free market."},
+            {"author": "B", "text": "What do you mean by that?"},
+        ]
+        result_output = [
+            {
+                "label": "Trigger",
+                "utterance_start_index": 0,
+                "utterance_end_index": 0,
+                "quote": "free market",
+                "wmn_group": 1,
+                "wmn_type": "non-understanding",
+            },
+            {
+                "label": "Indicator",
+                "utterance_start_index": 1,
+                "utterance_end_index": 1,
+                "quote": "What do you mean",
+                "wmn_group": 1,
+                "wmn_type": "non-understanding",
+            },
+        ]
+
+        issues = _validate_result_hits(result_output, utterances, output_format="detailed")
+
+        self.assertEqual(issues, [])
+
 
 if __name__ == "__main__":
     unittest.main()

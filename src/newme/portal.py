@@ -169,6 +169,25 @@ def _validate_result_hits(
                 )
             issues.append({"severity": "warning", "message": message})
 
+    types_by_group: dict[Any, set[str]] = {}
+    for hit in result_output:
+        if not isinstance(hit, dict):
+            continue
+        group = hit.get("wmn_group")
+        wmn_type = str(hit.get("wmn_type") or "").strip()
+        if group is None or not wmn_type:
+            continue
+        types_by_group.setdefault(group, set()).add(wmn_type)
+    for group, types in types_by_group.items():
+        if len(types) > 1:
+            issues.append({
+                "severity": "warning",
+                "message": (
+                    f"wmn_group {group} hits disagree on wmn_type ({', '.join(sorted(types))}); "
+                    "using the Indicator hit's type."
+                ),
+            })
+
     return issues
 
 
@@ -436,13 +455,21 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
 def _group_label_links_by_wmn(label_links: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Group chip-row entries by wmn_group, preserving first-seen order.
 
-    Returns a list of {"group": <wmn_group value, or None>, "links": [...]}.
-    When no entry carries a wmn_group (older runs, or the simplified output
-    format, which doesn't have the field), everything lands in one None-group
-    bucket, and the template renders it exactly like the old flat chip row.
+    Returns a list of {"group": <wmn_group value, or None>, "wmn_type": <canonical
+    type or "">, "links": [...]}. When no entry carries a wmn_group (older runs,
+    or the simplified output format, which doesn't have the field), everything
+    lands in one None-group bucket, and the template renders it exactly like the
+    old flat chip row.
+
+    A WMN has one type, but the model reports wmn_type per hit and can disagree
+    with itself across a group's Trigger/Indicator/Negotiation hits. wmn_type is
+    conceptually a property of the Indicator (the prompt asks the model to
+    "classify the Indicator"), so that hit's value is taken as the group's
+    canonical type and stamped onto every link in the group — the UI must never
+    show two different types for the same WMN.
     """
     if not any(link.get("wmn_group") is not None for link in label_links):
-        return [{"group": None, "links": label_links}]
+        return [{"group": None, "wmn_type": "", "links": label_links}]
 
     groups: dict[Any, list[dict[str, Any]]] = {}
     order: list[Any] = []
@@ -457,9 +484,18 @@ def _group_label_links_by_wmn(label_links: list[dict[str, Any]]) -> list[dict[st
             order.append(group)
         groups[group].append(link)
 
-    grouped = [{"group": group, "links": groups[group]} for group in order]
+    grouped = []
+    for group in order:
+        links = groups[group]
+        canonical_type = next(
+            (link["wmn_type"] for link in links if link["name"] == "Indicator" and link.get("wmn_type")),
+            next((link["wmn_type"] for link in links if link.get("wmn_type")), ""),
+        )
+        for link in links:
+            link["wmn_type"] = canonical_type
+        grouped.append({"group": group, "wmn_type": canonical_type, "links": links})
     if ungrouped:
-        grouped.append({"group": None, "links": ungrouped})
+        grouped.append({"group": None, "wmn_type": "", "links": ungrouped})
     return grouped
 
 
@@ -1826,7 +1862,8 @@ def run_results(experiment_id: int, prompt_id: int):
     prompt = Prompt.query.filter_by(id=prompt_id, experiment_id=exp.id).first_or_404()
 
     run = (
-        Run.query.filter_by(prompt_id=prompt.id, status="complete")
+        Run.query.filter_by(prompt_id=prompt.id)
+        .filter(Run.status.in_(("complete", "aborted")))
         .order_by(Run.completed_at.desc())
         .first_or_404()
     )
@@ -1862,12 +1899,12 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
     prompt = Prompt.query.filter_by(id=prompt_id, experiment_id=exp.id).first_or_404()
 
-    run = (
-        Run.query.filter_by(prompt_id=prompt.id, status="complete")
-        .order_by(Run.completed_at.desc())
+    result = (
+        RunResult.query.join(Run, RunResult.run_id == Run.id)
+        .filter(RunResult.id == result_id, Run.prompt_id == prompt.id)
         .first_or_404()
     )
-    result = RunResult.query.filter_by(id=result_id, run_id=run.id).first_or_404()
+    run = db.session.get(Run, result.run_id)
 
     utterances = _load_dialogue_utterances(result.corpus_codename, result.dialogue_external_id)
     llm_labels = _result_label_payload(result, utterances)

@@ -10,8 +10,14 @@
   </div>
 
   <p class="results-meta">
+    {% if run.status == "aborted" %}
+    <span class="run-status-badge run-aborted">Aborted</span>
+    {{ run.completed_at.strftime('%Y-%m-%d %H:%M') if run.completed_at }} &mdash;
+    {{ results | length }} / {{ run.total_count }} dialogue(s) processed &mdash;
+    {% else %}
     Run completed {{ run.completed_at.strftime('%Y-%m-%d %H:%M') }} &mdash;
     {{ results | length }} dialogue(s) &mdash;
+    {% endif %}
     <strong>{{ hit_count }} hit(s)</strong>
   </p>
 

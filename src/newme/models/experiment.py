@@ -68,7 +68,9 @@ DETAILED_APPENDIX_DEFAULT = (
     '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
     f'  - label (string): {_LABEL_FIELD_INSTRUCTIONS}\n'
     f'  - quote (string): {_QUOTE_FIELD_INSTRUCTIONS}\n'
-    '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n'
+    '  - wmn_type (string): "non-understanding", "disagreement", or "other" — '
+    "the classification of the WMN's Indicator. Use the same wmn_type value on "
+    "every hit that shares the same wmn_group\n"
     '  - wmn_group (integer): identifies which candidate WMN this hit belongs to '
     "within this dialogue. If the dialogue contains more than one candidate WMN, "
     "give the Trigger, Indicator, and Negotiation hits that together make up the "

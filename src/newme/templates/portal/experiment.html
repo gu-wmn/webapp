@@ -200,7 +200,14 @@
               class="button-secondary">View results</a>
             {% elif latest_run.status == "aborted" %}
             <span class="run-status-badge run-aborted">Aborted</span>
-            <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') if latest_run.completed_at }}</span>
+            <span class="run-meta">
+              {{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') if latest_run.completed_at }}
+              {% if latest_run.processed_count %}&mdash; {{ latest_run.processed_count }} / {{ latest_run.total_count }} processed{% endif %}
+            </span>
+            {% if latest_run.processed_count %}
+            <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}"
+              class="button-secondary">View results</a>
+            {% endif %}
             {% elif latest_run.status == "error" %}
             <span class="run-status-badge run-error">Error</span>
             <span class="run-meta run-error-msg" title="{{ latest_run.error_message }}">

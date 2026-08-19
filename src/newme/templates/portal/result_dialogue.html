@@ -61,6 +61,7 @@
           {% if grp.group is not none %}
           <p class="wmn-group-heading">
             WMN {{ grp.group }}
+            {% if grp.wmn_type %}<span class="chip-wmn-type">({{ grp.wmn_type }})</span>{% endif %}
             {% if grp.matched_sequence %}
             <span class="wmn-match-badge wmn-match-yes">&#8596; human WMN {{ grp.matched_sequence }}</span>
             {% else %}
