@@ -24,6 +24,62 @@
   <main class="page-wrap">
     {% block content %}{% endblock %}
   </main>
+  <button type="button" id="back-to-top" class="back-to-top-btn">Back to the top</button>
   {% block scripts %}{% endblock %}
+  <script>
+    function animateScrollToY(targetY, duration) {
+      const startY = window.scrollY;
+      const distance = targetY - startY;
+      const startTime = performance.now();
+
+      function step(now) {
+        const t = Math.min((now - startTime) / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+        window.scrollTo(0, startY + distance * eased);
+        if (t < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    function fastScrollTo(target, duration) {
+      const marginTop = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+      const targetY = target.getBoundingClientRect().top + window.scrollY - marginTop;
+      animateScrollToY(targetY, duration);
+    }
+
+    document.addEventListener("click", (event) => {
+      const link = event.target.closest('a[href^="#"]');
+      if (!link) return;
+      const id = link.getAttribute("href").slice(1);
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+
+      event.preventDefault();
+      fastScrollTo(target, 300);
+      history.replaceState(null, "", "#" + id);
+
+      target.classList.remove("flash-highlight");
+      void target.offsetWidth; // restart the animation if clicked again quickly
+      target.classList.add("flash-highlight");
+      target.addEventListener(
+        "animationend",
+        () => target.classList.remove("flash-highlight"),
+        { once: true }
+      );
+    });
+
+    const backToTopBtn = document.getElementById("back-to-top");
+    if (backToTopBtn) {
+      window.addEventListener("scroll", () => {
+        backToTopBtn.classList.toggle("visible", window.scrollY > 400);
+      }, { passive: true });
+
+      backToTopBtn.addEventListener("click", () => {
+        animateScrollToY(0, 300);
+        history.replaceState(null, "", location.pathname + location.search);
+      });
+    }
+  </script>
 </body>
 </html>

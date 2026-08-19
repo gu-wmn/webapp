@@ -622,8 +622,23 @@ a.diag-id:focus-visible {
   color: var(--accent);
 }
 
-[id^="label-"] {
+[id*="label-"] {
   scroll-margin-top: 92px;
+}
+
+@keyframes flash-highlight {
+  0%, 75% {
+    background-color: #ffd400;
+    box-shadow: 0 0 0 3px #ffd400;
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+.flash-highlight {
+  animation: flash-highlight 1s ease-in;
 }
 
 .utterance .Trigger,
@@ -2043,4 +2058,40 @@ textarea[readonly]:focus {
     grid-row: span 1;
     grid-template-rows: auto;
   }
+}
+
+/* ── Back to top ──────────────────────────────────────────────────────────── */
+
+.back-to-top-btn {
+  position: fixed;
+  /* Sit just right of .page-wrap's content edge (width: min(1180px, 96vw),
+     centered) when there's room; otherwise clamp to stay inside the viewport
+     instead of overlapping the content. */
+  left: min(calc(50% + min(590px, 48vw) + 1rem), calc(100% - 9rem));
+  top: 5rem;
+  z-index: 40;
+  border: none;
+  border-radius: 999px;
+  padding: 0.8rem 1.4rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+}
+
+.back-to-top-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.back-to-top-btn:hover {
+  filter: brightness(1.1);
 }
