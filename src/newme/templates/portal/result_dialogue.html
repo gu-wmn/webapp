@@ -32,7 +32,7 @@
   <div class="wmn-tab-row" role="tablist" aria-label="WMNs for dialogue">
     {% for tab in tabs %}
     <a
-      class="wmn-tab {% if selected_tab and tab.label == selected_tab.label %}selected{% endif %} {% if tab.kind == 'matched' %}wmn-tab-matched-pair{% else %}wmn-tab-unmatched{% endif %}"
+      class="wmn-tab {% if selected_tab and tab.label == selected_tab.label %}selected{% endif %} {% if tab.kind == 'matched' %}wmn-tab-matched-pair{% elif tab.kind == 'model-only' %}wmn-tab-model-only{% else %}wmn-tab-human-only{% endif %}"
       href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=tab.group, wmn_id=tab.wmn_id) }}"
       role="tab"
       aria-selected="{{ 'true' if selected_tab and tab.label == selected_tab.label else 'false' }}"

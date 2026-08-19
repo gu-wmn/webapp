@@ -1622,6 +1622,7 @@ textarea[readonly]:focus {
 .match-full  { background: #d1e7dd; color: #0f5132; }
 .match-partial { background: #fff3cd; color: #664d03; }
 .match-miss  { background: #f8d7da; color: #842029; }
+.match-extra { background: #dbe6f5; color: #2f5fa8; }
 
 .result-stat {
   font-size: 0.75rem;
@@ -1822,11 +1823,20 @@ textarea[readonly]:focus {
   border-color: #2a6f41;
 }
 
-.wmn-tab-unmatched {
+.wmn-tab-model-only {
+  box-shadow: inset 0 -3px 0 #2f5fa8;
+}
+
+.wmn-tab-model-only.selected {
+  background: #2f5fa8;
+  border-color: #234a85;
+}
+
+.wmn-tab-human-only {
   box-shadow: inset 0 -3px 0 #842029;
 }
 
-.wmn-tab-unmatched.selected {
+.wmn-tab-human-only.selected {
   background: #842029;
   border-color: #63181f;
 }

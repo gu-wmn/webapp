@@ -39,6 +39,11 @@
         <span class="metric-value">{% if metrics.f1 is not none %}{{ "%.0f"|format(metrics.f1 * 100) }}%{% else %}—{% endif %}</span>
         <span class="metric-label">F1</span>
       </div>
+      <div class="metric-cell metric-cell-highlight">
+        <span class="metric-value">{% if metrics.wmn_human_total %}{{ "%.0f"|format(metrics.wmn_matched / metrics.wmn_human_total * 100) }}%{% else %}—{% endif %}</span>
+        <span class="metric-label">Matching WMNs</span>
+        <span class="metric-sub">{{ metrics.wmn_matched }} / {{ metrics.wmn_human_total }}</span>
+      </div>
       <div class="metric-cell">
         <span class="metric-value">{{ metrics.tp }}</span>
         <span class="metric-label">True positives</span>
@@ -50,10 +55,6 @@
       <div class="metric-cell">
         <span class="metric-value">{{ metrics.fn }}</span>
         <span class="metric-label">False negatives</span>
-      </div>
-      <div class="metric-cell">
-        <span class="metric-value">{{ metrics.dialogues_with_hits }} / {{ metrics.total }}</span>
-        <span class="metric-label">Dialogues with hits</span>
       </div>
     </div>
   </div>
@@ -69,19 +70,20 @@
         <span class="result-corpus">{{ result.corpus_codename }}</span>
         {% if result.error %}
           <span class="result-badge result-badge-error">Error</span>
-        {% elif result.output is iterable and result.output is not string %}
-          <span class="result-badge result-badge-hits">{{ result.output | length }} hit(s)</span>
-        {% else %}
+        {% elif result.output is string %}
           <span class="result-badge result-badge-text">—</span>
         {% endif %}
-        {% if m.human_count is defined and m.human_count > 0 %}
-          {% if m.matched > 0 and m.matched == m.human_count %}
-            <span class="result-match-badge match-full" title="All {{ m.human_count }} human-annotated instance(s) matched">&#10003; {{ m.matched }}/{{ m.human_count }}</span>
-          {% elif m.matched > 0 %}
-            <span class="result-match-badge match-partial" title="{{ m.matched }} of {{ m.human_count }} human-annotated instance(s) matched">~ {{ m.matched }}/{{ m.human_count }}</span>
+        {% if m.wmn_human_total is not none and m.wmn_human_total > 0 %}
+          {% if m.wmn_matched > 0 and m.wmn_matched == m.wmn_human_total %}
+            <span class="result-match-badge match-full" title="All {{ m.wmn_human_total }} human-annotated WMN(s) matched">&#10003; {{ m.wmn_matched }}/{{ m.wmn_human_total }} WMNs</span>
+          {% elif m.wmn_matched > 0 %}
+            <span class="result-match-badge match-partial" title="{{ m.wmn_matched }} of {{ m.wmn_human_total }} human-annotated WMN(s) matched">~ {{ m.wmn_matched }}/{{ m.wmn_human_total }} WMNs</span>
           {% else %}
-            <span class="result-match-badge match-miss" title="No human-annotated instances matched">&#10007; 0/{{ m.human_count }}</span>
+            <span class="result-match-badge match-miss" title="No human-annotated WMNs matched">&#10007; 0/{{ m.wmn_human_total }} WMNs</span>
           {% endif %}
+        {% endif %}
+        {% if m.wmn_model_extra %}
+          <span class="result-match-badge match-extra" title="{{ m.wmn_model_extra }} additional WMN(s) found by the model with no human match">+{{ m.wmn_model_extra }} (model) WMNs</span>
         {% endif %}
         {% if result.dialogue_char_count is not none or result.duration_seconds is not none %}
         <span class="result-stat">

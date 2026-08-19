@@ -1762,9 +1762,7 @@ def _match_wmn_label_instances(
     Trigger, Indicator, and Negotiation as a single slot to match or miss — a
     human WMN annotated with three separate Trigger rows (a real pattern in this
     data: the same contested word marked at several points in the dialogue)
-    still counts as one Trigger to recall, not three. The same collapsing
-    applies on the model side, so a group that also emits several Trigger hits
-    is one Trigger opportunity, not several.
+    still counts as one Trigger to recall, not three.
 
     WMN pairing reuses _match_wmn_groups_to_sequences (Indicator-overlap only,
     strict 1:1). Within a paired (group, sequence), each label type present on
@@ -1828,17 +1826,20 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
     """Compute precision/recall/F1 against human annotations, per dialogue.
 
     For dialogues where the model output carries a wmn_group (the "detailed"
-    output format), matching happens per-WMN via _match_wmn_label_instances:
-    each WMN's Trigger, Indicator, and Negotiation is one slot to match or miss,
-    not one per raw hit/label row — see that function's docstring for the
-    per-label matching rules and why a group/sequence with no WMN pairing counts
-    as wrong (or missed) on every label it has.
+    output format), label-level matching happens per-WMN via
+    _match_wmn_label_instances: each WMN's Trigger, Indicator, and Negotiation
+    is one slot to match or miss, not one per raw hit/label row — see that
+    function's docstring for the per-label matching rules and why a
+    group/sequence with no WMN pairing counts as wrong (or missed) on every
+    label it has. WMN-level matching (whole WMNs, not individual labels) reuses
+    the same _match_wmn_groups_to_sequences pairing (Indicator-overlap only,
+    strict 1:1): a human WMN is "matched" if some model group paired with it at
+    all, regardless of how many of its labels that group actually got right.
 
-    For dialogues without a wmn_group anywhere (older runs, or the "simplified"
-    format, which doesn't have the field), falls back to
-    _match_hits_to_human_instances: a hit is a true positive if it shares a
-    label with, and its utterance range overlaps, at least one human annotation
-    instance, with no WMN-level grouping.
+    For dialogues without a wmn_group anywhere (older runs, or the retired
+    "simplified" format, which doesn't have the field), label-level matching
+    falls back to _match_hits_to_human_instances, and WMN-level matching is
+    unavailable (there's no group to pair on).
 
     Precision and recall are independently classified — precision counts model
     hits/groups as true/false positives, recall counts human instances/sequences
@@ -1846,8 +1847,11 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
 
     Returns:
         aggregate: dict with precision, recall, f1, tp, fp, recall_tp, fn,
-                   dialogues_with_hits, dialogues_with_human, dialogues_both
-        per_result: dict mapping result.id -> {matched, llm_count, human_count}
+                   wmn_matched, wmn_human_total, dialogues_with_human
+        per_result: dict mapping result.id ->
+                     {wmn_matched, wmn_human_total, wmn_model_extra}
+                     (wmn_matched/wmn_human_total are None when the dialogue's
+                     output has no wmn_group to pair on)
     """
     from .models import AnnotationSequence
 
@@ -1874,6 +1878,7 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
 
     hit_tp = hit_fp = 0
     human_tp = human_fn = 0
+    wmn_matched_total = wmn_human_total_total = 0
     dialogues_with_hits = dialogues_with_human = dialogues_both = 0
     per_result: dict[int, dict] = {}
 
@@ -1882,19 +1887,27 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
         human_seqs = seqs_by_dialogue.get(key, [])
         llm_records = _llm_hit_records(result)
 
+        wmn_matched = wmn_human_total = None
+        wmn_model_extra = 0
+
         if any(r["group"] is not None for r in llm_records):
             human_records = _human_label_records(human_seqs)
             match = _match_wmn_label_instances(human_records, llm_records)
-            llm_count = match["hit_tp"] + match["hit_fp"]
-            human_count = match["human_tp"] + match["human_fn"]
             has_hits = bool(llm_records)
             has_human = bool(human_records)
+
+            llm_tuples = [(r["name"], r["start"], r["end"], r["group"]) for r in llm_records]
+            human_tuples = [(r["name"], r["start"], r["end"], r["sequence"]) for r in human_records]
+            wmn_match = _match_wmn_groups_to_sequences(human_tuples, llm_tuples)
+            wmn_matched = len(wmn_match["group_to_sequence"])
+            wmn_human_total = len(human_seqs)
+            wmn_model_extra = len(wmn_match["unmatched_groups"])
+            wmn_matched_total += wmn_matched
+            wmn_human_total_total += wmn_human_total
         else:
             human_instances = _human_label_instances(human_seqs)
             llm_instances = _llm_hit_instances(result)
             match = _match_hits_to_human_instances(human_instances, llm_instances)
-            llm_count = len(llm_instances)
-            human_count = len(human_instances)
             has_hits = bool(llm_instances)
             has_human = bool(human_instances)
 
@@ -1911,9 +1924,9 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
             dialogues_both += 1
 
         per_result[result.id] = {
-            "matched": match["human_tp"],
-            "llm_count": llm_count,
-            "human_count": human_count,
+            "wmn_matched": wmn_matched,
+            "wmn_human_total": wmn_human_total,
+            "wmn_model_extra": wmn_model_extra,
         }
 
     precision = hit_tp / (hit_tp + hit_fp) if (hit_tp + hit_fp) > 0 else None
@@ -1926,6 +1939,8 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        "wmn_matched": wmn_matched_total,
+        "wmn_human_total": wmn_human_total_total,
         "dialogues_with_hits": dialogues_with_hits,
         "dialogues_with_human": dialogues_with_human,
         "dialogues_both": dialogues_both,
@@ -2018,8 +2033,9 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
     group_to_sequence = wmn_match["group_to_sequence"]
     sequence_to_group = wmn_match["sequence_to_group"]
 
-    # Unified tabs: one per model wmn_group (in first-seen order, matched or
-    # not), then one per human sequence that no group matched. This puts a
+    # Unified tabs, ordered matched pairs first, then human-only, then
+    # model-only — within each category, model groups keep first-seen order
+    # and human sequences keep their existing (wmn_id) order. This puts a
     # single tab over both panels for every matched pair, plus a tab each for
     # whichever side has no counterpart.
     group_order: list[Any] = []
@@ -2032,12 +2048,19 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
 
     sequence_by_id = {sequence.wmn_id: sequence for sequence in human_sequences}
 
-    tabs: list[dict[str, Any]] = []
+    matched_tabs: list[dict[str, Any]] = []
+    model_only_tabs: list[dict[str, Any]] = []
     for group in group_order:
-        tabs.append({"group": group, "wmn_id": group_to_sequence.get(group)})
-    for sequence in human_sequences:
-        if sequence.wmn_id not in sequence_to_group:
-            tabs.append({"group": None, "wmn_id": sequence.wmn_id})
+        entry = {"group": group, "wmn_id": group_to_sequence.get(group)}
+        (matched_tabs if entry["wmn_id"] is not None else model_only_tabs).append(entry)
+
+    human_only_tabs = [
+        {"group": None, "wmn_id": sequence.wmn_id}
+        for sequence in human_sequences
+        if sequence.wmn_id not in sequence_to_group
+    ]
+
+    tabs: list[dict[str, Any]] = matched_tabs + human_only_tabs + model_only_tabs
 
     for index, tab in enumerate(tabs, start=1):
         tab["label"] = f"WMN-{index}"
