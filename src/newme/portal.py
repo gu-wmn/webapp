@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import functools
 import random
+import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
@@ -21,9 +23,13 @@ from .models.experiment import (
     DEFAULT_PROMPT_2_OUTPUT_FORMAT,
     DEFAULT_PROMPT_2_TEXT,
     DETAILED_APPENDIX_DEFAULT,
+    DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT,
     FREE_TEXT_APPENDIX_DEFAULT,
     GLOBAL_TEMPLATE_DEFAULT,
+    MULTI_UTTERANCE_QUOTE_SEPARATOR,
+    PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT,
     REGEX_FORMAT_HELP,
+    REGEX_INPUT_INSTRUCTIONS_DEFAULT,
     REGEX_PATTERNS_DEFAULT,
     SIMPLIFIED_APPENDIX_DEFAULT,
     VALID_WMN_TYPES,
@@ -105,14 +111,6 @@ def _span_text_from_utterances(
     return "\n".join(parts)
 
 
-def _utterance_range_text(
-    utterances: list[dict[str, str]],
-    start_index: int,
-    end_index: int,
-) -> str:
-    return "\n".join(utterances[idx]["text"] for idx in range(start_index, end_index + 1))
-
-
 def _validate_result_hits(
     result_output: Any,
     utterances: list[dict[str, str]],
@@ -158,15 +156,18 @@ def _validate_result_hits(
             })
             continue
 
-        utterance_text = _utterance_range_text(utterances, start_index, end_index)
-        if quote not in utterance_text:
-            issues.append({
-                "severity": "warning",
-                "message": (
-                    f"Hit {hit_index} quote does not occur in the spanned utterance text: "
-                    f"{quote!r}"
-                ),
-            })
+        if not _derive_spans_from_quote(utterances, start_index, end_index, quote):
+            if start_index != end_index:
+                message = (
+                    f"Hit {hit_index} quote does not match either the full spanned text or "
+                    f"the \"<start> {MULTI_UTTERANCE_QUOTE_SEPARATOR.strip()} <end>\" "
+                    f"boundary format for a multi-utterance hit: {quote!r}"
+                )
+            else:
+                message = (
+                    f"Hit {hit_index} quote does not occur in utterance {start_index}: {quote!r}"
+                )
+            issues.append({"severity": "warning", "message": message})
 
     return issues
 
@@ -213,6 +214,7 @@ def _annotate_dialogue_utterances(
             "excerpt": _hit_text(label, "quote", "excerpt").strip(),
             "anchor_id": anchor_id,
             "wmn_type": str(label.get("wmn_type") or "").strip(),
+            "wmn_group": label.get("wmn_group"),
         })
 
         add_to_start = 0
@@ -353,7 +355,26 @@ def _derive_spans_from_quote(
             results.append((utt_s, char_s, utt_e, char_e_last + 1))
         search_from = found + 1
 
-    return results
+    if results or start_index == end_index:
+        return results
+
+    # Multi-utterance hits are allowed to quote only the boundary utterances —
+    # "<start utterance text> MULTI_UTTERANCE_QUOTE_SEPARATOR <end utterance text>" —
+    # instead of reproducing every utterance in between verbatim. See
+    # MULTI_UTTERANCE_QUOTE_SEPARATOR's docstring in models/experiment.py.
+    if MULTI_UTTERANCE_QUOTE_SEPARATOR in quote:
+        head, _, tail = quote.partition(MULTI_UTTERANCE_QUOTE_SEPARATOR)
+        head, tail = head.strip(), tail.strip()
+        start_text = utterances[start_index]["text"]
+        end_text = utterances[end_index]["text"]
+        head_pos = start_text.find(head) if head else 0
+        tail_pos = end_text.find(tail) if tail else 0
+        if head_pos != -1 and tail_pos != -1:
+            char_start = head_pos
+            char_end = (tail_pos + len(tail)) if tail else len(end_text)
+            return [(start_index, char_start, end_index, char_end)]
+
+    return []
 
 
 def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -381,6 +402,7 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
 
         excerpt = _hit_text(hit, "quote", "excerpt")
         wmn_type = str(hit.get("wmn_type") or "").strip()
+        wmn_group = hit.get("wmn_group")
 
         occurrences = _derive_spans_from_quote(utterances, start_index, end_index, excerpt)
         if occurrences:
@@ -393,6 +415,7 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
                     "char_end_index": char_e,
                     "quote": excerpt,
                     "wmn_type": wmn_type,
+                    "wmn_group": wmn_group,
                 })
         else:
             # Quote not locatable; fall back to highlighting the full utterance range.
@@ -404,9 +427,40 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
                 "char_end_index": len(utterances[end_index]["text"]),
                 "quote": excerpt,
                 "wmn_type": wmn_type,
+                "wmn_group": wmn_group,
             })
 
     return labels
+
+
+def _group_label_links_by_wmn(label_links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group chip-row entries by wmn_group, preserving first-seen order.
+
+    Returns a list of {"group": <wmn_group value, or None>, "links": [...]}.
+    When no entry carries a wmn_group (older runs, or the simplified output
+    format, which doesn't have the field), everything lands in one None-group
+    bucket, and the template renders it exactly like the old flat chip row.
+    """
+    if not any(link.get("wmn_group") is not None for link in label_links):
+        return [{"group": None, "links": label_links}]
+
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    order: list[Any] = []
+    ungrouped: list[dict[str, Any]] = []
+    for link in label_links:
+        group = link.get("wmn_group")
+        if group is None:
+            ungrouped.append(link)
+            continue
+        if group not in groups:
+            groups[group] = []
+            order.append(group)
+        groups[group].append(link)
+
+    grouped = [{"group": group, "links": groups[group]} for group in order]
+    if ungrouped:
+        grouped.append({"group": None, "links": ungrouped})
+    return grouped
 
 
 @bp.get("/login")
@@ -451,20 +505,172 @@ def experiments_home():
     )
 
 
+def _one_line_preview(text: str | None, limit: int = 100) -> str:
+    preview = " ".join((text or "").split())
+    if len(preview) > limit:
+        preview = preview[:limit].rstrip() + "…"
+    return preview
+
+
+def _settings_field_meta(value: str | None, default: str) -> dict[str, Any]:
+    is_custom = bool(value)
+    effective = value or default
+    return {"is_custom": is_custom, "preview": _one_line_preview(effective)}
+
+
+def _appendix_options(user_settings: "UserSettings | None") -> dict[str, dict[str, Any]]:
+    fields = {
+        "": (
+            user_settings.free_text_appendix if user_settings else None,
+            FREE_TEXT_APPENDIX_DEFAULT,
+        ),
+        "simplified": (
+            user_settings.simplified_appendix if user_settings else None,
+            SIMPLIFIED_APPENDIX_DEFAULT,
+        ),
+        "detailed": (
+            user_settings.detailed_appendix if user_settings else None,
+            DETAILED_APPENDIX_DEFAULT,
+        ),
+    }
+    options = {}
+    for key, (value, default) in fields.items():
+        meta = _settings_field_meta(value, default)
+        options[key] = {"text": value or default, **meta}
+    return options
+
+
+def _prompt_input_preview(
+    experiment: "Experiment", position: int, user_settings: "UserSettings | None"
+) -> dict[str, Any]:
+    from .models import Corpus, Dialogue, Utterance
+    from .runner import _get_previous_output, _get_regex_candidates, format_dialogue
+
+    dialogue_header = (
+        user_settings.effective_dialogue_input_instructions
+        if user_settings
+        else DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT
+    )
+    regex_header = (
+        user_settings.effective_regex_input_instructions
+        if user_settings
+        else REGEX_INPUT_INSTRUCTIONS_DEFAULT
+    )
+    previous_header = (
+        user_settings.effective_previous_output_instructions
+        if user_settings
+        else PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT
+    )
+
+    empty_hits_json = '{"hits": []}'
+    regex_empty_text = regex_header.strip() + "\n" + empty_hits_json
+    previous_empty_text = previous_header.strip() + "\n" + empty_hits_json
+
+    preview: dict[str, Any] = {
+        "sample_dialogue": experiment.dialogues[0] if experiment.dialogues else None,
+        "dialogue_text": None,
+        "dialogue_preview": "",
+        "regex_text": regex_empty_text,
+        "regex_preview": _one_line_preview(regex_empty_text),
+        "previous_text": previous_empty_text,
+        "previous_preview": _one_line_preview(previous_empty_text),
+        "previous_prompt": None,
+    }
+
+    if position > 1:
+        preview["previous_prompt"] = Prompt.query.filter_by(
+            experiment_id=experiment.id, position=position - 1
+        ).first()
+
+    sample = preview["sample_dialogue"]
+    if sample is None:
+        return preview
+
+    dialogue_obj = (
+        db.session.query(Dialogue)
+        .join(Corpus, Dialogue.corpus_id == Corpus.id)
+        .filter(
+            Corpus.codename == sample.corpus_codename,
+            Dialogue.external_id == sample.dialogue_external_id,
+        )
+        .first()
+    )
+    if dialogue_obj is None:
+        return preview
+
+    utterances = (
+        Utterance.query.filter_by(dialogue_id=dialogue_obj.id)
+        .order_by(Utterance.position.asc())
+        .all()
+    )
+
+    preview["dialogue_text"] = dialogue_header.strip() + "\n" + format_dialogue(
+        utterances, sample.dialogue_external_id, sample.corpus_codename
+    )
+    preview["dialogue_preview"] = _one_line_preview(preview["dialogue_text"])
+
+    preview["regex_text"] = regex_header.strip() + "\n" + _get_regex_candidates(
+        experiment, sample.dialogue_external_id, utterances
+    )
+    preview["regex_preview"] = _one_line_preview(preview["regex_text"])
+
+    if position > 1:
+        fake_prompt = SimpleNamespace(position=position, experiment_id=experiment.id)
+        preview["previous_text"] = previous_header.strip() + "\n" + _get_previous_output(
+            fake_prompt, sample.dialogue_external_id, utterances
+        )
+        preview["previous_preview"] = _one_line_preview(preview["previous_text"])
+
+    return preview
+
+
 @bp.get("/settings")
 @login_required
 def settings():
     user = session["user"]
     user_settings = db.session.get(UserSettings, user)
+    field_meta = {
+        "global_template": _settings_field_meta(
+            user_settings.global_template if user_settings else None, GLOBAL_TEMPLATE_DEFAULT
+        ),
+        "regex_patterns": _settings_field_meta(
+            user_settings.regex_patterns if user_settings else None, REGEX_PATTERNS_DEFAULT
+        ),
+        "dialogue_input_instructions": _settings_field_meta(
+            user_settings.dialogue_input_instructions if user_settings else None,
+            DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT,
+        ),
+        "regex_input_instructions": _settings_field_meta(
+            user_settings.regex_input_instructions if user_settings else None,
+            REGEX_INPUT_INSTRUCTIONS_DEFAULT,
+        ),
+        "previous_output_instructions": _settings_field_meta(
+            user_settings.previous_output_instructions if user_settings else None,
+            PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT,
+        ),
+        "free_text_appendix": _settings_field_meta(
+            user_settings.free_text_appendix if user_settings else None, FREE_TEXT_APPENDIX_DEFAULT
+        ),
+        "simplified_appendix": _settings_field_meta(
+            user_settings.simplified_appendix if user_settings else None, SIMPLIFIED_APPENDIX_DEFAULT
+        ),
+        "detailed_appendix": _settings_field_meta(
+            user_settings.detailed_appendix if user_settings else None, DETAILED_APPENDIX_DEFAULT
+        ),
+    }
     return render_template(
         "portal/settings.html",
         user=user,
         us=user_settings,
+        field_meta=field_meta,
         global_template_default=GLOBAL_TEMPLATE_DEFAULT,
         free_text_appendix_default=FREE_TEXT_APPENDIX_DEFAULT,
         simplified_appendix_default=SIMPLIFIED_APPENDIX_DEFAULT,
         detailed_appendix_default=DETAILED_APPENDIX_DEFAULT,
         regex_patterns_default=REGEX_PATTERNS_DEFAULT,
+        dialogue_input_instructions_default=DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT,
+        regex_input_instructions_default=REGEX_INPUT_INSTRUCTIONS_DEFAULT,
+        previous_output_instructions_default=PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT,
         regex_format_help=REGEX_FORMAT_HELP,
     )
 
@@ -483,8 +689,45 @@ def save_settings():
     user_settings.simplified_appendix = (request.form.get("simplified_appendix") or "").strip() or None
     user_settings.detailed_appendix = (request.form.get("detailed_appendix") or "").strip() or None
     user_settings.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None
+    user_settings.dialogue_input_instructions = (
+        request.form.get("dialogue_input_instructions") or ""
+    ).strip() or None
+    user_settings.regex_input_instructions = (
+        request.form.get("regex_input_instructions") or ""
+    ).strip() or None
+    user_settings.previous_output_instructions = (
+        request.form.get("previous_output_instructions") or ""
+    ).strip() or None
     db.session.commit()
     return redirect(url_for("portal.settings"))
+
+
+_RESETTABLE_SETTINGS_FIELDS = {
+    "global_template",
+    "regex_patterns",
+    "dialogue_input_instructions",
+    "regex_input_instructions",
+    "previous_output_instructions",
+    "free_text_appendix",
+    "simplified_appendix",
+    "detailed_appendix",
+}
+
+
+@bp.post("/settings/reset")
+@login_required
+def reset_settings_field():
+    user = session["user"]
+    field = (request.form.get("field") or "").strip()
+    if field not in _RESETTABLE_SETTINGS_FIELDS:
+        return jsonify({"error": "Unknown field"}), 400
+
+    user_settings = db.session.get(UserSettings, user)
+    if user_settings is not None:
+        setattr(user_settings, field, None)
+        db.session.commit()
+
+    return jsonify({"ok": True})
 
 
 @bp.get("/experiments/new")
@@ -555,11 +798,17 @@ def experiment(experiment_id: int):
         RegexRun.status.in_(["pending", "running"]),
     ).first()
 
+    regex_meta = _settings_field_meta(
+        user_settings.regex_patterns if user_settings else None, REGEX_PATTERNS_DEFAULT
+    )
+
     return render_template(
         "portal/experiment.html",
         user=user,
         experiment=exp,
         user_settings=user_settings,
+        regex_meta=regex_meta,
+        regex_patterns_text=user_settings.effective_regex_patterns if user_settings else REGEX_PATTERNS_DEFAULT,
         corpora=corpora,
         wmn_type_options=VALID_WMN_TYPES,
         latest_runs=latest_runs,
@@ -658,6 +907,37 @@ def _resolve_dialogues(exp: Experiment) -> None:
     exp.dialogues_resolved_at = datetime.now(timezone.utc)
     db.session.commit()
 
+    _trigger_regex_run(exp)
+
+
+def _trigger_regex_run(exp: Experiment) -> None:
+    from flask import current_app
+
+    from .runner import execute_regex_run
+
+    if not exp.dialogues:
+        return
+
+    active = RegexRun.query.filter(
+        RegexRun.experiment_id == exp.id,
+        RegexRun.status.in_(["pending", "running"]),
+    ).first()
+    if active:
+        return
+
+    active_llm = Run.query.filter(
+        Run.experiment_id == exp.id,
+        Run.status.in_(["pending", "running"]),
+    ).first()
+    if active_llm:
+        return
+
+    regex_run = RegexRun(experiment_id=exp.id, total_count=len(exp.dialogues))
+    db.session.add(regex_run)
+    db.session.commit()
+
+    execute_regex_run(regex_run.id, current_app._get_current_object())
+
 
 @bp.get("/api/hosts")
 @login_required
@@ -701,6 +981,10 @@ def new_prompt(experiment_id: int):
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
     user_settings = db.session.get(UserSettings, user) or UserSettings()
 
+    next_position = (
+        db.session.query(db.func.max(Prompt.position)).filter_by(experiment_id=exp.id).scalar() or 0
+    ) + 1
+
     error = None
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
@@ -712,13 +996,6 @@ def new_prompt(experiment_id: int):
         if not name or not prompt_text or not host or not model:
             error = "Name, prompt text, host, and model are required."
         else:
-            next_position = (
-                db.session.query(db.func.max(Prompt.position))
-                .filter_by(experiment_id=exp.id)
-                .scalar()
-                or 0
-            ) + 1
-
             temp_raw = (request.form.get("temperature") or "").strip()
             try:
                 temperature = float(temp_raw) if temp_raw else None
@@ -731,7 +1008,7 @@ def new_prompt(experiment_id: int):
             except ValueError:
                 num_ctx = None
 
-            output_format = output_format_raw if output_format_raw in ("simplified", "detailed") else None
+            output_format = output_format_raw if output_format_raw == "detailed" else None
 
             db.session.add(Prompt(
                 experiment_id=exp.id,
@@ -740,6 +1017,8 @@ def new_prompt(experiment_id: int):
                 host=host or None,
                 model=model or "—",
                 include_global_template=request.form.get("include_global_template") == "on",
+                include_dialogue=next_position <= 1 or request.form.get("include_dialogue") == "on",
+                include_regex_candidates=request.form.get("include_regex_candidates") == "on",
                 output_format=output_format,
                 prompt_text=prompt_text,
                 temperature=temperature,
@@ -752,7 +1031,14 @@ def new_prompt(experiment_id: int):
         "portal/new_prompt.html",
         user=user,
         experiment=exp,
+        prompt=None,
         user_settings=user_settings,
+        position=next_position,
+        global_meta=_settings_field_meta(
+            user_settings.global_template if user_settings else None, GLOBAL_TEMPLATE_DEFAULT
+        ),
+        appendix_options=_appendix_options(user_settings),
+        input_preview=_prompt_input_preview(exp, next_position, user_settings),
         error=error,
     )
 
@@ -782,9 +1068,13 @@ def edit_prompt(experiment_id: int, prompt_id: int):
             prompt.model = model or "—"
             prompt.prompt_text = prompt_text
             prompt.include_global_template = request.form.get("include_global_template") == "on"
+            prompt.include_dialogue = (
+                prompt.position <= 1 or request.form.get("include_dialogue") == "on"
+            )
+            prompt.include_regex_candidates = request.form.get("include_regex_candidates") == "on"
             prompt.system_prompt = None
 
-            output_format = output_format_raw if output_format_raw in ("simplified", "detailed") else None
+            output_format = output_format_raw if output_format_raw == "detailed" else None
             prompt.output_format = output_format
 
             temp_raw = (request.form.get("temperature") or "").strip()
@@ -808,42 +1098,13 @@ def edit_prompt(experiment_id: int, prompt_id: int):
         experiment=exp,
         prompt=prompt,
         user_settings=user_settings,
+        position=prompt.position,
+        global_meta=_settings_field_meta(
+            user_settings.global_template if user_settings else None, GLOBAL_TEMPLATE_DEFAULT
+        ),
+        appendix_options=_appendix_options(user_settings),
+        input_preview=_prompt_input_preview(exp, prompt.position, user_settings),
         error=error,
-    )
-
-
-@bp.post("/experiments/<int:experiment_id>/regex/toggle")
-@login_required
-def toggle_regex(experiment_id: int):
-    user = session["user"]
-    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
-    exp.regex_enabled = not exp.regex_enabled
-    db.session.commit()
-    return redirect(url_for("portal.experiment", experiment_id=exp.id))
-
-
-@bp.get("/experiments/<int:experiment_id>/regex/edit")
-@bp.post("/experiments/<int:experiment_id>/regex/edit")
-@login_required
-def edit_regex(experiment_id: int):
-    user = session["user"]
-    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
-
-    if request.method == "POST":
-        exp.regex_patterns = (request.form.get("regex_patterns") or "").strip() or None
-        db.session.commit()
-        return redirect(url_for("portal.experiment", experiment_id=exp.id))
-
-    user_settings = db.session.get(UserSettings, user)
-    default = user_settings.effective_regex_patterns if user_settings else REGEX_PATTERNS_DEFAULT
-    current = exp.regex_patterns if exp.regex_patterns is not None else default
-
-    return render_template(
-        "portal/edit_regex.html",
-        user=user,
-        experiment=exp,
-        regex_patterns=current,
-        regex_format_help=REGEX_FORMAT_HELP,
     )
 
 
@@ -857,8 +1118,6 @@ def start_regex_run(experiment_id: int):
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
 
-    if not exp.regex_enabled:
-        return jsonify({"error": "Regex pre-filter is not enabled."}), 400
     if not exp.dialogues_resolved_at:
         return jsonify({"error": "Resolve the dialogue sample before running."}), 400
 
@@ -881,7 +1140,7 @@ def start_regex_run(experiment_id: int):
     db.session.commit()
 
     execute_regex_run(regex_run.id, current_app._get_current_object())
-    return jsonify({"run_id": regex_run.id})
+    return jsonify({"run_id": regex_run.id, "total_count": regex_run.total_count})
 
 
 @bp.get("/api/regex-runs/<int:run_id>/status")
@@ -901,6 +1160,27 @@ def regex_run_status(run_id: int):
         "total_count": regex_run.total_count,
         "error_message": regex_run.error_message,
     })
+
+
+@bp.post("/api/regex-runs/<int:run_id>/abort")
+@login_required
+def abort_regex_run(run_id: int):
+    regex_run = db.session.get(RegexRun, run_id)
+    if regex_run is None:
+        return jsonify({"error": "Not found"}), 404
+    Experiment.query.filter_by(
+        id=regex_run.experiment_id, user_email=session["user"]
+    ).first_or_404()
+
+    if regex_run.status not in ("pending", "running"):
+        return jsonify({"error": "Run is not active.", "status": regex_run.status}), 409
+
+    regex_run.status = "aborted"
+    regex_run.error_message = "Aborted by user."
+    regex_run.completed_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    return jsonify({"run_id": regex_run.id, "status": regex_run.status})
 
 
 @bp.get("/experiments/<int:experiment_id>/regex/results")
@@ -1069,7 +1349,7 @@ def start_run(experiment_id: int, prompt_id: int):
     db.session.commit()
 
     execute_run(run.id, current_app._get_current_object())
-    return jsonify({"run_id": run.id})
+    return jsonify({"run_id": run.id, "total_count": run.total_count})
 
 
 @bp.get("/api/runs/<int:run_id>/status")
@@ -1088,28 +1368,65 @@ def run_status(run_id: int):
         "processed_count": run.processed_count,
         "total_count": run.total_count,
         "error_message": run.error_message,
+        "last_error": run.last_error if run.status in ("pending", "running") else None,
     })
 
 
-def _human_utterance_set(sequences) -> set[int]:
-    """Return the set of utterance indices covered by human annotation labels."""
-    indices: set[int] = set()
+@bp.post("/api/runs/<int:run_id>/abort")
+@login_required
+def abort_run(run_id: int):
+    run = db.session.get(Run, run_id)
+    if run is None:
+        return jsonify({"error": "Not found"}), 404
+    Experiment.query.filter_by(
+        id=run.experiment_id, user_email=session["user"]
+    ).first_or_404()
+
+    if run.status not in ("pending", "running"):
+        return jsonify({"error": "Run is not active.", "status": run.status}), 409
+
+    run.status = "aborted"
+    run.error_message = "Aborted by user."
+    run.last_error = None
+    run.completed_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    from .runner import request_ollama_abort
+    request_ollama_abort(run.id)
+
+    return jsonify({"run_id": run.id, "status": run.status})
+
+
+def _human_label_instances_with_sequence(sequences) -> list[tuple[str, int, int, str]]:
+    """Return (label_name, start_index, end_index, sequence_wmn_id) for each valid human label."""
+    instances: list[tuple[str, int, int, str]] = []
     for seq in sequences:
         for label in seq.labels:
             if label.name not in _VALID_LABEL_NAMES:
                 continue
             if label.start_index is None or label.end_index is None:
                 continue
-            for i in range(label.start_index, label.end_index + 1):
-                indices.add(i)
-    return indices
+            instances.append((label.name, label.start_index, label.end_index, seq.wmn_id))
+    return instances
 
 
-def _llm_utterance_set(result: RunResult) -> set[int]:
-    """Return the set of utterance indices covered by LLM output hits."""
+def _human_label_instances(sequences) -> list[tuple[str, int, int]]:
+    """Return (label_name, start_index, end_index) for each valid human annotation label."""
+    return [
+        (name, start, end)
+        for name, start, end, _seq in _human_label_instances_with_sequence(sequences)
+    ]
+
+
+def _llm_hit_instances_with_group(result: RunResult) -> list[tuple[str | None, int, int, int | None]]:
+    """Return (label_name, start_index, end_index, wmn_group) for each LLM output hit.
+
+    label_name may be None or an unrecognized value — such hits can never match a
+    human instance (see _ranges_overlap callers) but still count toward false positives.
+    """
     if not isinstance(result.output, list):
-        return set()
-    indices: set[int] = set()
+        return []
+    instances: list[tuple[str | None, int, int, int | None]] = []
     for hit in result.output:
         if not isinstance(hit, dict):
             continue
@@ -1118,17 +1435,302 @@ def _llm_utterance_set(result: RunResult) -> set[int]:
         if start is None:
             continue
         end = end if end is not None else start
-        for i in range(int(start), int(end) + 1):
-            indices.add(i)
-    return indices
+        try:
+            start, end = int(start), int(end)
+        except (TypeError, ValueError):
+            continue
+        if end < start:
+            continue
+        instances.append((hit.get("label"), start, end, hit.get("wmn_group")))
+    return instances
+
+
+def _llm_hit_instances(result: RunResult) -> list[tuple[str | None, int, int]]:
+    """Return (label_name, start_index, end_index) for each LLM output hit."""
+    return [
+        (name, start, end)
+        for name, start, end, _group in _llm_hit_instances_with_group(result)
+    ]
+
+
+def _ranges_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
+    return a_start <= b_end and b_start <= a_end
+
+
+def _match_wmn_groups_to_sequences(
+    human_instances: list[tuple[str, int, int, str]],
+    llm_instances: list[tuple[str | None, int, int, int | None]],
+) -> dict[str, Any]:
+    """Pair each model wmn_group with at most one human WMN sequence, and vice versa.
+
+    Only the Indicator span decides whether a group and a sequence are "the same"
+    WMN — the Indicator is the anchor of a WMN, so two candidates match if their
+    Indicators overlap in any way, regardless of whether their Trigger/Negotiation
+    spans line up too. Candidate pairs are scored by how many overlapping
+    Indicator pairs they share (normally 0 or 1, since a well-formed group/sequence
+    each carry a single Indicator) and assigned highest-scoring-first (greedy
+    max-weight bipartite matching), skipping a pair once either side has already
+    been claimed. With typically only a handful of WMNs per dialogue this greedy
+    approach reaches the optimal assignment in practice without needing a real
+    matching solver.
+
+    Returns:
+        {
+            "group_to_sequence": {wmn_group: sequence_wmn_id, ...},
+            "sequence_to_group": {sequence_wmn_id: wmn_group, ...},
+            "unmatched_groups": [wmn_group, ...] with no pairing, sorted,
+            "unmatched_sequences": [sequence_wmn_id, ...] with no pairing, sorted,
+        }
+    """
+    groups = sorted({group for _, _, _, group in llm_instances if group is not None})
+    sequences = sorted({seq for _, _, _, seq in human_instances if seq is not None})
+
+    scores: dict[tuple[Any, Any], int] = {}
+    for llm_name, llm_start, llm_end, group in llm_instances:
+        if group is None or llm_name != "Indicator":
+            continue
+        for h_name, h_start, h_end, seq in human_instances:
+            if seq is None or h_name != "Indicator":
+                continue
+            if _ranges_overlap(llm_start, llm_end, h_start, h_end):
+                key = (group, seq)
+                scores[key] = scores.get(key, 0) + 1
+
+    ordered_pairs = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    group_to_sequence: dict[Any, Any] = {}
+    sequence_to_group: dict[Any, Any] = {}
+    for (group, seq), _score in ordered_pairs:
+        if group in group_to_sequence or seq in sequence_to_group:
+            continue
+        group_to_sequence[group] = seq
+        sequence_to_group[seq] = group
+
+    return {
+        "group_to_sequence": group_to_sequence,
+        "sequence_to_group": sequence_to_group,
+        "unmatched_groups": [g for g in groups if g not in group_to_sequence],
+        "unmatched_sequences": [s for s in sequences if s not in sequence_to_group],
+    }
+
+
+def _match_hits_to_human_instances(
+    human_instances: list[tuple[str, int, int]],
+    llm_instances: list[tuple[str | None, int, int]],
+) -> dict[str, int]:
+    """Classify hits/human instances for one dialogue via label-aware overlap matching.
+
+    A hit is a true positive if some human instance shares its label and its
+    utterance range overlaps the hit's — no matter where the quote falls, and no
+    matter how many other utterances the hit's span covers. A human instance is
+    "recalled" under the same rule, checked independently of the hit side (see
+    _compute_run_metrics docstring for why the two directions aren't required to
+    produce the same count).
+    """
+    result_hit_tp = 0
+    human_matched = [False] * len(human_instances)
+    for llm_name, llm_start, llm_end in llm_instances:
+        matched_this_hit = False
+        for i, (h_name, h_start, h_end) in enumerate(human_instances):
+            if h_name != llm_name:
+                continue
+            if _ranges_overlap(llm_start, llm_end, h_start, h_end):
+                matched_this_hit = True
+                human_matched[i] = True
+        if matched_this_hit:
+            result_hit_tp += 1
+
+    result_human_tp = sum(1 for m in human_matched if m)
+
+    return {
+        "hit_tp": result_hit_tp,
+        "hit_fp": len(llm_instances) - result_hit_tp,
+        "human_tp": result_human_tp,
+        "human_fn": len(human_instances) - result_human_tp,
+    }
+
+
+_WORD_RE = re.compile(r"[A-Za-z']+")
+
+
+def _quote_word_overlap(a: str, b: str) -> bool:
+    """True if two quotes share at least one word, case-insensitive.
+
+    Used for Trigger matching, which cares whether the same contested word was
+    identified — not whether the two quotes were anchored to the same utterance,
+    since a model and a human annotator can reasonably point at different
+    occurrences of the same word.
+    """
+    words_a = {w.lower() for w in _WORD_RE.findall(a or "")}
+    words_b = {w.lower() for w in _WORD_RE.findall(b or "")}
+    return bool(words_a & words_b)
+
+
+def _llm_hit_records(result: RunResult) -> list[dict[str, Any]]:
+    """Return {name, start, end, group, quote} for each LLM output hit."""
+    if not isinstance(result.output, list):
+        return []
+    records: list[dict[str, Any]] = []
+    for hit in result.output:
+        if not isinstance(hit, dict):
+            continue
+        start = hit.get("utterance_start_index", hit.get("start_index"))
+        end = hit.get("utterance_end_index", hit.get("end_index"))
+        if start is None:
+            continue
+        end = end if end is not None else start
+        try:
+            start, end = int(start), int(end)
+        except (TypeError, ValueError):
+            continue
+        if end < start:
+            continue
+        records.append({
+            "name": hit.get("label"),
+            "start": start,
+            "end": end,
+            "group": hit.get("wmn_group"),
+            "quote": _hit_text(hit, "quote", "excerpt"),
+        })
+    return records
+
+
+def _human_label_records(sequences) -> list[dict[str, Any]]:
+    """Return {name, start, end, sequence, quote} for each valid human label."""
+    records: list[dict[str, Any]] = []
+    for seq in sequences:
+        for label in seq.labels:
+            if label.name not in _VALID_LABEL_NAMES:
+                continue
+            if label.start_index is None or label.end_index is None:
+                continue
+            records.append({
+                "name": label.name,
+                "start": label.start_index,
+                "end": label.end_index,
+                "sequence": seq.wmn_id,
+                "quote": label.excerpt or "",
+            })
+    return records
+
+
+def _labels_match(
+    label_name: str, llm_items: list[dict[str, Any]], human_items: list[dict[str, Any]]
+) -> bool:
+    """Does any llm item of this label match any human item of the same label?
+
+    Trigger matches on shared quote word, position-independent. Indicator and
+    Negotiation match on utterance-range overlap — for Negotiation specifically,
+    any part of any negotiation-labeled utterance overlapping is enough.
+    """
+    for llm_item in llm_items:
+        for human_item in human_items:
+            if label_name == "Trigger":
+                if _quote_word_overlap(llm_item["quote"], human_item["quote"]):
+                    return True
+            elif _ranges_overlap(
+                llm_item["start"], llm_item["end"], human_item["start"], human_item["end"]
+            ):
+                return True
+    return False
+
+
+def _match_wmn_label_instances(
+    human_records: list[dict[str, Any]],
+    llm_records: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Classify hits/human instances for one dialogue, counting once per (WMN, label).
+
+    Unlike _match_hits_to_human_instances, which treats every individual hit and
+    every individual human label row as its own unit, this counts each WMN's
+    Trigger, Indicator, and Negotiation as a single slot to match or miss — a
+    human WMN annotated with three separate Trigger rows (a real pattern in this
+    data: the same contested word marked at several points in the dialogue)
+    still counts as one Trigger to recall, not three. The same collapsing
+    applies on the model side, so a group that also emits several Trigger hits
+    is one Trigger opportunity, not several.
+
+    WMN pairing reuses _match_wmn_groups_to_sequences (Indicator-overlap only,
+    strict 1:1). Within a paired (group, sequence), each label type present on
+    either side is then checked with _labels_match. A group with no pairing
+    contributes a false positive for every label type it has; an unpaired
+    sequence contributes a false negative for every label type it has — an
+    unmatched WMN is wrong (or missed) across the board, not just on its
+    Indicator.
+    """
+    llm_tuples = [(r["name"], r["start"], r["end"], r["group"]) for r in llm_records]
+    human_tuples = [(r["name"], r["start"], r["end"], r["sequence"]) for r in human_records]
+    wmn_match = _match_wmn_groups_to_sequences(human_tuples, llm_tuples)
+
+    def _by_group(group: Any) -> list[dict[str, Any]]:
+        return [r for r in llm_records if r["group"] == group]
+
+    def _by_sequence(seq: Any) -> list[dict[str, Any]]:
+        return [r for r in human_records if r["sequence"] == seq]
+
+    def _label_names(items: list[dict[str, Any]]) -> list[str]:
+        return sorted({r["name"] for r in items if r["name"] in _VALID_LABEL_NAMES})
+
+    groups = sorted({r["group"] for r in llm_records if r["group"] is not None})
+    sequences = sorted({r["sequence"] for r in human_records if r["sequence"] is not None})
+
+    hit_tp = hit_fp = 0
+    for group in groups:
+        group_items = _by_group(group)
+        seq = wmn_match["group_to_sequence"].get(group)
+        seq_items = _by_sequence(seq) if seq is not None else []
+        for label_name in _label_names(group_items):
+            llm_items = [r for r in group_items if r["name"] == label_name]
+            human_items = [r for r in seq_items if r["name"] == label_name]
+            if human_items and _labels_match(label_name, llm_items, human_items):
+                hit_tp += 1
+            else:
+                hit_fp += 1
+
+    human_tp = human_fn = 0
+    for seq in sequences:
+        seq_items = _by_sequence(seq)
+        group = wmn_match["sequence_to_group"].get(seq)
+        group_items = _by_group(group) if group is not None else []
+        for label_name in _label_names(seq_items):
+            human_items = [r for r in seq_items if r["name"] == label_name]
+            llm_items = [r for r in group_items if r["name"] == label_name]
+            if llm_items and _labels_match(label_name, llm_items, human_items):
+                human_tp += 1
+            else:
+                human_fn += 1
+
+    return {
+        "hit_tp": hit_tp,
+        "hit_fp": hit_fp,
+        "human_tp": human_tp,
+        "human_fn": human_fn,
+    }
 
 
 def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict]]:
-    """Compute utterance-level precision/recall/F1 for a run against human annotations.
+    """Compute precision/recall/F1 against human annotations, per dialogue.
+
+    For dialogues where the model output carries a wmn_group (the "detailed"
+    output format), matching happens per-WMN via _match_wmn_label_instances:
+    each WMN's Trigger, Indicator, and Negotiation is one slot to match or miss,
+    not one per raw hit/label row — see that function's docstring for the
+    per-label matching rules and why a group/sequence with no WMN pairing counts
+    as wrong (or missed) on every label it has.
+
+    For dialogues without a wmn_group anywhere (older runs, or the "simplified"
+    format, which doesn't have the field), falls back to
+    _match_hits_to_human_instances: a hit is a true positive if it shares a
+    label with, and its utterance range overlaps, at least one human annotation
+    instance, with no WMN-level grouping.
+
+    Precision and recall are independently classified — precision counts model
+    hits/groups as true/false positives, recall counts human instances/sequences
+    as recalled/missed — so their numerators aren't required to be equal.
 
     Returns:
-        aggregate: dict with precision, recall, f1, tp, fp, fn, dialogues_with_hits,
-                   dialogues_with_human, dialogues_both
+        aggregate: dict with precision, recall, f1, tp, fp, recall_tp, fn,
+                   dialogues_with_hits, dialogues_with_human, dialogues_both
         per_result: dict mapping result.id -> {matched, llm_count, human_count}
     """
     from .models import AnnotationSequence
@@ -1154,40 +1756,57 @@ def _compute_run_metrics(results: list[RunResult]) -> tuple[dict, dict[int, dict
         key = (seq.corpus_codename, seq.dialogue_external_id)
         seqs_by_dialogue.setdefault(key, []).append(seq)
 
-    tp = fp = fn = 0
+    hit_tp = hit_fp = 0
+    human_tp = human_fn = 0
     dialogues_with_hits = dialogues_with_human = dialogues_both = 0
     per_result: dict[int, dict] = {}
 
     for result in results:
         key = (result.corpus_codename, result.dialogue_external_id)
         human_seqs = seqs_by_dialogue.get(key, [])
-        human_set = _human_utterance_set(human_seqs)
-        llm_set = _llm_utterance_set(result)
+        llm_records = _llm_hit_records(result)
 
-        matched = len(human_set & llm_set)
-        tp += matched
-        fp += len(llm_set - human_set)
-        fn += len(human_set - llm_set)
+        if any(r["group"] is not None for r in llm_records):
+            human_records = _human_label_records(human_seqs)
+            match = _match_wmn_label_instances(human_records, llm_records)
+            llm_count = match["hit_tp"] + match["hit_fp"]
+            human_count = match["human_tp"] + match["human_fn"]
+            has_hits = bool(llm_records)
+            has_human = bool(human_records)
+        else:
+            human_instances = _human_label_instances(human_seqs)
+            llm_instances = _llm_hit_instances(result)
+            match = _match_hits_to_human_instances(human_instances, llm_instances)
+            llm_count = len(llm_instances)
+            human_count = len(human_instances)
+            has_hits = bool(llm_instances)
+            has_human = bool(human_instances)
 
-        if llm_set:
+        hit_tp += match["hit_tp"]
+        hit_fp += match["hit_fp"]
+        human_tp += match["human_tp"]
+        human_fn += match["human_fn"]
+
+        if has_hits:
             dialogues_with_hits += 1
-        if human_set:
+        if has_human:
             dialogues_with_human += 1
-        if llm_set and human_set:
+        if has_hits and has_human:
             dialogues_both += 1
 
         per_result[result.id] = {
-            "matched": matched,
-            "llm_count": len(llm_set),
-            "human_count": len(human_set),
+            "matched": match["human_tp"],
+            "llm_count": llm_count,
+            "human_count": human_count,
         }
 
-    precision = tp / (tp + fp) if (tp + fp) > 0 else None
-    recall = tp / (tp + fn) if (tp + fn) > 0 else None
+    precision = hit_tp / (hit_tp + hit_fp) if (hit_tp + hit_fp) > 0 else None
+    recall = human_tp / (human_tp + human_fn) if (human_tp + human_fn) > 0 else None
     f1 = (2 * precision * recall / (precision + recall)) if (precision and recall) else None
 
     aggregate = {
-        "tp": tp, "fp": fp, "fn": fn,
+        "tp": hit_tp, "fp": hit_fp,
+        "recall_tp": human_tp, "fn": human_fn,
         "precision": precision,
         "recall": recall,
         "f1": f1,
@@ -1265,6 +1884,7 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
             llm_labels,
             anchor_prefix="llm-label",
         )
+    llm_label_groups = _group_label_links_by_wmn(llm_label_links)
 
     human_sequences = (
         AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
@@ -1281,6 +1901,19 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         if sequence.wmn_type in _VALID_WMN_VALUES
         or (sequence.wmn_meaning or "").strip().lower() in _RESULT_WMN_MEANINGS
     ]
+
+    wmn_match = _match_wmn_groups_to_sequences(
+        _human_label_instances_with_sequence(human_sequences),
+        _llm_hit_instances_with_group(result),
+    )
+    for grp in llm_label_groups:
+        grp["matched_sequence"] = (
+            wmn_match["group_to_sequence"].get(grp["group"]) if grp["group"] is not None else None
+        )
+    sequence_matches = {
+        sequence.wmn_id: wmn_match["sequence_to_group"].get(sequence.wmn_id)
+        for sequence in human_sequences
+    }
 
     selected_wmn_id = (request.args.get("wmn_id") or "").strip()
     selected_sequence = None
@@ -1318,7 +1951,9 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         llm_utterances=llm_utterances,
         llm_labels=llm_labels,
         llm_label_links=llm_label_links,
+        llm_label_groups=llm_label_groups,
         human_sequences=human_sequences,
+        sequence_matches=sequence_matches,
         selected_sequence=selected_sequence,
         human_utterances=human_utterances,
         human_labels=human_labels,

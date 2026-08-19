@@ -13,6 +13,12 @@
     <p><b>Run completed:</b> {{ regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</p>
     <p><b>Regex hits:</b> {{ llm_hit_count }}</p>
     <p><b>Human WMNs:</b> {{ human_sequences | length }}</p>
+    {% if result.dialogue_char_count is not none %}
+    <p><b>Dialogue length:</b> {{ result.dialogue_char_count }} characters</p>
+    {% endif %}
+    {% if result.duration_seconds is not none %}
+    <p><b>Processing time:</b> {{ "%.1f"|format(result.duration_seconds) }}s</p>
+    {% endif %}
   </div>
 
   {% if utterances_missing %}

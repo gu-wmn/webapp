@@ -3,8 +3,38 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
+
+# Maps an in-progress LLM run to the Ollama client it's currently using, so an
+# abort request from a different thread can close just that run's own
+# connection — never a different run's, even one hitting the same host.
+_active_clients_lock = threading.Lock()
+_active_clients: dict[int, Any] = {}
+
+
+def request_ollama_abort(run_id: int) -> bool:
+    """Best-effort: close the given run's own Ollama connection so a blocked
+    request unblocks instead of running to completion with nobody listening.
+
+    Only ever touches the client registered for this specific run_id — other
+    runs, including ones talking to the same host, are unaffected since each
+    run owns its own ollama.Client / connection, never a shared one.
+
+    Returns True if a client was found for this run (closing it is fire-and-
+    forget; if it fails, the caller still has the DB-level abort as the
+    reliable fallback).
+    """
+    with _active_clients_lock:
+        client = _active_clients.get(run_id)
+    if client is None:
+        return False
+    try:
+        client._client.close()
+    except Exception:
+        pass
+    return True
 
 
 def format_dialogue(utterances, dialogue_external_id: str, corpus_codename: str) -> str:
@@ -26,7 +56,11 @@ def format_dialogue(utterances, dialogue_external_id: str, corpus_codename: str)
 
 
 def assemble_prompt_text(
-    prompt, dialogue_text: str, previous_output: str, user_settings, regex_candidates: str = ""
+    prompt,
+    dialogue_text: str,
+    previous_output: str,
+    user_settings,
+    regex_candidates: str = "",
 ) -> str:
     parts = []
 
@@ -39,12 +73,33 @@ def assemble_prompt_text(
         if template:
             parts.append(template.strip())
 
+    if prompt.position <= 1 or prompt.include_dialogue:
+        header = (
+            user_settings.effective_dialogue_input_instructions
+            if user_settings
+            else _dialogue_input_default()
+        )
+        parts.append(header.strip() + "\n" + dialogue_text)
+
+    if prompt.include_regex_candidates:
+        header = (
+            user_settings.effective_regex_input_instructions
+            if user_settings
+            else _regex_input_default()
+        )
+        parts.append(header.strip() + "\n" + regex_candidates)
+
+    if prompt.position > 1:
+        header = (
+            user_settings.effective_previous_output_instructions
+            if user_settings
+            else _previous_output_default()
+        )
+        parts.append(header.strip() + "\n" + previous_output)
+
     parts.append(prompt.prompt_text.strip())
 
     text = "\n\n".join(p for p in parts if p)
-    text = text.replace("{dialogue}", dialogue_text)
-    text = text.replace("{previous_output}", previous_output)
-    text = text.replace("{regex_candidates}", regex_candidates)
 
     if prompt.output_format == "simplified":
         appendix = (
@@ -86,6 +141,21 @@ def _detailed_default() -> str:
     return DETAILED_APPENDIX_DEFAULT
 
 
+def _dialogue_input_default() -> str:
+    from .models.experiment import DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT
+    return DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT
+
+
+def _regex_input_default() -> str:
+    from .models.experiment import REGEX_INPUT_INSTRUCTIONS_DEFAULT
+    return REGEX_INPUT_INSTRUCTIONS_DEFAULT
+
+
+def _previous_output_default() -> str:
+    from .models.experiment import PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT
+    return PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT
+
+
 def _get_output_schema(output_format: str) -> dict | None:
     if output_format == "simplified":
         return {
@@ -96,12 +166,14 @@ def _get_output_schema(output_format: str) -> dict | None:
                     "items": {
                         "type": "object",
                         "properties": {
+                            "dialogue_id": {"type": "string"},
                             "utterance_start_index": {"type": "integer"},
                             "utterance_end_index": {"type": "integer"},
                             "label": {"type": "string"},
                             "quote": {"type": "string"},
                         },
                         "required": [
+                            "dialogue_id",
                             "utterance_start_index",
                             "utterance_end_index",
                             "label",
@@ -121,18 +193,22 @@ def _get_output_schema(output_format: str) -> dict | None:
                     "items": {
                         "type": "object",
                         "properties": {
+                            "dialogue_id": {"type": "string"},
                             "utterance_start_index": {"type": "integer"},
                             "utterance_end_index": {"type": "integer"},
                             "label": {"type": "string"},
                             "quote": {"type": "string"},
                             "wmn_type": {"type": "string"},
+                            "wmn_group": {"type": "integer"},
                         },
                         "required": [
+                            "dialogue_id",
                             "utterance_start_index",
                             "utterance_end_index",
                             "label",
                             "quote",
                             "wmn_type",
+                            "wmn_group",
                         ],
                     },
                 }
@@ -159,6 +235,8 @@ def _serialize_hits_payload(hits: list[dict[str, Any]]) -> str:
 
 def _filter_valid_hits(hits: list, utterances: list) -> list:
     """Drop hits whose quote cannot be located in their stated utterance range."""
+    from .models.experiment import MULTI_UTTERANCE_QUOTE_SEPARATOR
+
     valid = []
     n = len(utterances)
     for hit in hits:
@@ -172,9 +250,22 @@ def _filter_valid_hits(hits: list, utterances: list) -> list:
         quote = str(hit.get("quote") or hit.get("excerpt") or "")
         if not quote or start < 0 or end < start or end >= n:
             continue
+
         range_text = "\n".join(utterances[i].text for i in range(start, end + 1))
         if quote in range_text:
             valid.append(hit)
+            continue
+
+        # Multi-utterance hits may quote only the boundary utterances, joined by
+        # MULTI_UTTERANCE_QUOTE_SEPARATOR, instead of the full verbatim span.
+        if start != end and MULTI_UTTERANCE_QUOTE_SEPARATOR in quote:
+            head, _, tail = quote.partition(MULTI_UTTERANCE_QUOTE_SEPARATOR)
+            head, tail = head.strip(), tail.strip()
+            head_ok = (not head) or (head in utterances[start].text)
+            tail_ok = (not tail) or (tail in utterances[end].text)
+            if head_ok and tail_ok:
+                valid.append(hit)
+
     return valid
 
 
@@ -253,9 +344,6 @@ def _run_regex(
 
 def _get_regex_candidates(experiment, dialogue_external_id: str, utterances: list) -> str:
     from .models.experiment import RegexRun, RegexRunResult
-
-    if not experiment.regex_enabled:
-        return _serialize_hits_payload([])
 
     regex_run = (
         RegexRun.query.filter_by(experiment_id=experiment.id, status="complete")
@@ -347,9 +435,7 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
             experiment = regex_run.experiment
             user_settings = db.session.get(UserSettings, experiment.user_email)
 
-            if experiment.regex_patterns is not None:
-                patterns_json = experiment.regex_patterns
-            elif user_settings is not None:
+            if user_settings is not None:
                 patterns_json = user_settings.effective_regex_patterns
             else:
                 patterns_json = REGEX_PATTERNS_DEFAULT
@@ -359,8 +445,14 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
             db.session.commit()
 
             for exp_dialogue in dialogues:
+                db.session.refresh(regex_run)
+                if regex_run.status not in ("pending", "running"):
+                    return
+
                 output = None
                 error_msg = None
+                char_count = None
+                started = time.monotonic()
 
                 try:
                     dialogue_obj = (
@@ -382,6 +474,7 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
                         .order_by(Utterance.position.asc())
                         .all()
                     )
+                    char_count = sum(len(u.text) for u in utterances)
                     output = _run_regex(
                         patterns_json, utterances, exp_dialogue.dialogue_external_id
                     )
@@ -395,6 +488,8 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
                     corpus_codename=exp_dialogue.corpus_codename,
                     output=output,
                     error=error_msg,
+                    dialogue_char_count=char_count,
+                    duration_seconds=time.monotonic() - started,
                 ))
                 regex_run.processed_count += 1
                 db.session.commit()
@@ -410,6 +505,28 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
                 regex_run.error_message = str(exc)
                 regex_run.completed_at = datetime.now(timezone.utc)
                 db.session.commit()
+
+
+def _chat_with_retry(client, chat_kwargs: dict, retries: int = 1, backoff_seconds: float = 2.0):
+    """Call client.chat(), retrying once on a transport-level failure.
+
+    A dropped or timed-out connection is often transient — worth one more
+    real attempt at getting results before giving up on this dialogue
+    entirely. Only transport errors are retried; a bad model name, a schema
+    violation, etc. would just fail identically again, so those propagate
+    immediately.
+    """
+    import httpx
+
+    attempt = 0
+    while True:
+        try:
+            return client.chat(**chat_kwargs)
+        except httpx.TransportError:
+            if attempt >= retries:
+                raise
+            attempt += 1
+            time.sleep(backoff_seconds)
 
 
 def _run_worker(run_id: int, app) -> None:
@@ -445,6 +562,8 @@ def _run_worker(run_id: int, app) -> None:
             if client is not None:
                 _unload_client = client
                 _unload_model = prompt.model
+                with _active_clients_lock:
+                    _active_clients[run_id] = client
             schema = _get_output_schema(prompt.output_format)
 
             if not is_regex:
@@ -460,10 +579,21 @@ def _run_worker(run_id: int, app) -> None:
                         f"Available: {', '.join(available)}"
                     )
 
+            import httpx
+
             for exp_dialogue in dialogues:
+                db.session.refresh(run)
+                if run.status not in ("pending", "running"):
+                    # Aborted (or otherwise stopped) from another request while
+                    # this thread was working — stop instead of writing more
+                    # results onto a run that's no longer active.
+                    return
+
                 output = None
                 raw_response = None
                 error_msg = None
+                char_count = None
+                started = time.monotonic()
 
                 try:
                     dialogue_obj = (
@@ -485,6 +615,7 @@ def _run_worker(run_id: int, app) -> None:
                         .order_by(Utterance.position.asc())
                         .all()
                     )
+                    char_count = sum(len(u.text) for u in utterances)
 
                     if is_regex:
                         output = _run_regex(
@@ -505,7 +636,11 @@ def _run_worker(run_id: int, app) -> None:
                             experiment, exp_dialogue.dialogue_external_id, utterances
                         )
                         prompt_text = assemble_prompt_text(
-                            prompt, dialogue_text, previous_output, user_settings, regex_candidates
+                            prompt,
+                            dialogue_text,
+                            previous_output,
+                            user_settings,
+                            regex_candidates,
                         )
 
                         messages = [{"role": "user", "content": prompt_text}]
@@ -524,7 +659,7 @@ def _run_worker(run_id: int, app) -> None:
                         if schema:
                             chat_kwargs["format"] = schema
 
-                        response = client.chat(**chat_kwargs)
+                        response = _chat_with_retry(client, chat_kwargs)
                         raw_response = response.message.content
 
                         if schema:
@@ -534,8 +669,14 @@ def _run_worker(run_id: int, app) -> None:
                         else:
                             output = raw_response
 
+                except httpx.TransportError as exc:
+                    error_msg = f"Lost connection to Ollama host at {host}: {exc}"
+                    run.last_error = error_msg
                 except Exception as exc:
                     error_msg = str(exc)
+                    run.last_error = error_msg
+                else:
+                    run.last_error = None
 
                 db.session.add(RunResult(
                     run_id=run.id,
@@ -544,12 +685,15 @@ def _run_worker(run_id: int, app) -> None:
                     output=output,
                     raw_response=raw_response,
                     error=error_msg,
+                    dialogue_char_count=char_count,
+                    duration_seconds=time.monotonic() - started,
                 ))
                 run.processed_count += 1
                 db.session.commit()
 
             run.status = "complete"
             run.completed_at = datetime.now(timezone.utc)
+            run.last_error = None
             db.session.commit()
 
         except Exception as exc:
@@ -557,9 +701,12 @@ def _run_worker(run_id: int, app) -> None:
             if run:
                 run.status = "error"
                 run.error_message = str(exc)
+                run.last_error = None
                 run.completed_at = datetime.now(timezone.utc)
                 db.session.commit()
         finally:
+            with _active_clients_lock:
+                _active_clients.pop(run_id, None)
             if _unload_client is not None and _unload_model:
                 try:
                     _unload_client.generate(model=_unload_model, prompt="", keep_alive=0)

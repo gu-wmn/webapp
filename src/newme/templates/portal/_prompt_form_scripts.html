@@ -1,0 +1,101 @@
+<script>
+(() => {
+  const hostSelect = document.getElementById("host");
+  const modelSelect = document.getElementById("model");
+  const modelError = document.getElementById("model-error");
+  const savedHost = {{ (prompt.host if prompt else none) | tojson }};
+  const savedModel = {{ (prompt.model if prompt else none) | tojson }};
+
+  function setSelectState(select, message) {
+    select.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = ""; opt.disabled = true; opt.selected = true;
+    opt.textContent = message;
+    select.appendChild(opt);
+  }
+
+  function loadModels(hostUrl, preselectModel) {
+    setSelectState(modelSelect, "Loading models…");
+    modelError.style.display = "none";
+
+    fetch(`{{ url_for('portal.api_models') }}?host=${encodeURIComponent(hostUrl)}`)
+      .then(r => r.json())
+      .then(data => {
+        modelSelect.innerHTML = "";
+        if (data.error) {
+          modelError.textContent = `${data.url}: ${data.error}`;
+          modelError.style.display = "";
+          setSelectState(modelSelect, "Ollama unreachable");
+        } else if (data.models.length === 0) {
+          modelError.textContent = `Connected to ${data.url} but no models are installed.`;
+          modelError.style.display = "";
+          setSelectState(modelSelect, "No models found");
+        } else {
+          setSelectState(modelSelect, "Select a model");
+          data.models.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m; opt.textContent = m;
+            modelSelect.appendChild(opt);
+          });
+          if (preselectModel && data.models.includes(preselectModel)) {
+            modelSelect.value = preselectModel;
+          }
+        }
+      })
+      .catch(err => {
+        modelError.textContent = `Request failed: ${err}`;
+        modelError.style.display = "";
+        setSelectState(modelSelect, "Error loading models");
+      });
+  }
+
+  fetch("{{ url_for('portal.api_hosts') }}")
+    .then(r => r.json())
+    .then(data => {
+      hostSelect.innerHTML = "";
+      if (!data.hosts || data.hosts.length === 0) {
+        setSelectState(hostSelect, "No hosts configured");
+        return;
+      }
+      setSelectState(hostSelect, "Select a host");
+      data.hosts.forEach(h => {
+        const opt = document.createElement("option");
+        opt.value = h.url; opt.textContent = h.label;
+        hostSelect.appendChild(opt);
+      });
+      if (savedHost && data.hosts.some(h => h.url === savedHost)) {
+        hostSelect.value = savedHost;
+        loadModels(savedHost, savedModel);
+      } else if (data.hosts.length === 1) {
+        hostSelect.value = data.hosts[0].url;
+        loadModels(data.hosts[0].url, savedModel);
+      }
+    })
+    .catch(err => {
+      setSelectState(hostSelect, `Error loading hosts: ${err}`);
+    });
+
+  hostSelect.addEventListener("change", () => {
+    if (hostSelect.value) loadModels(hostSelect.value, null);
+  });
+})();
+
+(() => {
+  const appendixOptions = {{ appendix_options | tojson }};
+  const outputFormatSelect = document.getElementById("output_format");
+  const appendixPreview = document.getElementById("appendix_preview");
+  const appendixBadge = document.getElementById("appendix-badge");
+  const appendixPreviewLine = document.getElementById("appendix-preview-line");
+
+  function updateAppendix() {
+    const opt = appendixOptions[outputFormatSelect.value] || appendixOptions[""];
+    appendixPreview.textContent = opt.text;
+    appendixBadge.textContent = opt.is_custom ? "Custom" : "Default";
+    appendixBadge.className = "prompt-review-badge " + (opt.is_custom ? "is-custom" : "is-default");
+    appendixPreviewLine.textContent = opt.preview || "Empty";
+  }
+
+  outputFormatSelect.addEventListener("change", updateAppendix);
+  updateAppendix();
+})();
+</script>

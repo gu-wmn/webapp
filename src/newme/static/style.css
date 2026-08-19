@@ -1127,7 +1127,7 @@ textarea[readonly]:focus {
 
 .prompt-form-grid {
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   gap: 2rem;
 }
 
@@ -1135,6 +1135,7 @@ textarea[readonly]:focus {
 .prompt-form-right {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .prompt-form-right .form-field + .form-field {
@@ -1183,6 +1184,133 @@ textarea[readonly]:focus {
   padding: 0.6rem 0.75rem;
   margin-top: 0.4rem;
   color: var(--ink);
+}
+
+/* ── Prompt chain review rows (Global prompt / Input / Output format) ───── */
+
+.prompt-section-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.prompt-review-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.prompt-review-row + .prompt-review-row {
+  margin-top: 0.6rem;
+}
+
+.prompt-review-row summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.88rem;
+}
+
+.prompt-review-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-review-row summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.prompt-review-row[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.prompt-review-title {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.prompt-review-preview {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-review-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.prompt-review-badge.is-default {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.prompt-review-badge.is-custom {
+  background: var(--negotiation);
+  color: #1a3a5c;
+}
+
+.prompt-review-body {
+  padding: 0 0.85rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--bg);
+}
+
+.prompt-review-body p {
+  margin: 0.7rem 0 0 0;
+}
+
+.prompt-review-text {
+  margin: 0.75rem 0 0 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+  color: var(--ink);
+}
+
+.prompt-main-label {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.form-field textarea.prompt-main-textarea {
+  border: 2px solid var(--accent);
+  font-size: 0.95rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.form-field textarea.prompt-main-textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .prompt-review-preview {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1303,6 +1431,7 @@ textarea[readonly]:focus {
 .run-running  { background: #fff3cd; color: #856404; }
 .run-complete { background: #d1e7dd; color: #0f5132; }
 .run-error    { background: #f8d7da; color: #842029; }
+.run-aborted  { background: #e2e3e5; color: #41464b; }
 
 .run-meta {
   font-size: 0.8rem;
@@ -1324,6 +1453,36 @@ textarea[readonly]:focus {
   gap: 0.6rem;
   flex: 1;
   min-width: 0;
+  flex-wrap: wrap;
+}
+
+.abort-run-btn {
+  border: 1px solid #c0392b;
+  background: none;
+  color: #c0392b;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.abort-run-btn:hover {
+  background: #fdecea;
+}
+
+.abort-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.run-connection-warning {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: #842029;
+  background: #f8d7da;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
 }
 
 .progress-bar {
@@ -1437,6 +1596,12 @@ textarea[readonly]:focus {
 .match-full  { background: #d1e7dd; color: #0f5132; }
 .match-partial { background: #fff3cd; color: #664d03; }
 .match-miss  { background: #f8d7da; color: #842029; }
+
+.result-stat {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
 
 .results-meta {
   color: var(--muted);
@@ -1562,6 +1727,24 @@ textarea[readonly]:focus {
   margin: 0.75rem 0 1rem;
 }
 
+.wmn-group-block + .wmn-group-block {
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.wmn-group-block .label-chip-row {
+  margin-top: 0.4rem;
+}
+
+.wmn-group-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0.6rem 0 0;
+}
+
 .chip-wmn-type {
   font-size: 0.78em;
   opacity: 0.75;
@@ -1600,6 +1783,36 @@ textarea[readonly]:focus {
   color: #fff;
 }
 
+.wmn-tab-matched {
+  box-shadow: inset 0 -3px 0 var(--wmn);
+}
+
+.wmn-match-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  margin-left: 0.5rem;
+  white-space: nowrap;
+}
+
+.wmn-group-heading .wmn-match-badge {
+  margin-left: 0.6rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.wmn-match-yes {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.wmn-match-no {
+  background: #f8d7da;
+  color: #842029;
+}
+
 /* ── Settings page ───────────────────────────────────────────────────────── */
 
 .settings-intro {
@@ -1607,28 +1820,102 @@ textarea[readonly]:focus {
   margin-bottom: 1.5rem;
 }
 
-.settings-section {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 1.5rem;
-  align-items: start;
-  padding: 1.75rem 0;
+.settings-group {
+  margin-bottom: 2rem;
 }
 
-.settings-section-label h2 {
-  font-size: 1rem;
+.settings-group-heading {
+  font-size: 1.1rem;
   font-weight: 700;
-  margin: 0 0 0.4rem 0;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #ddd4c6;
 }
 
-.settings-section-label p {
+.settings-row {
+  border: 1px solid #ddd4c6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.settings-row + .settings-row {
+  margin-top: 0.75rem;
+}
+
+.settings-row-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-row-summary::before {
+  content: "▸";
+  color: #6b5d4f;
+  font-size: 0.75rem;
+  transition: transform 0.15s ease;
+}
+
+.settings-row[open] > .settings-row-summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-row-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.settings-row-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.settings-row-badge.is-default {
+  background: #ede7de;
+  color: #6b5d4f;
+}
+
+.settings-row-badge.is-custom {
+  background: #d7e8ff;
+  color: #1a3a5c;
+}
+
+.settings-row-preview {
+  color: #948575;
+  font-size: 0.85rem;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-body {
+  padding: 0 1rem 1.25rem 1rem;
+  border-top: 1px solid #ede7de;
+}
+
+.settings-row-body p {
   font-size: 0.875rem;
   color: #6b5d4f;
-  margin: 0;
   line-height: 1.5;
+  margin: 0.85rem 0 0.6rem 0;
 }
 
-.settings-section-label code {
+.settings-row-body code {
   font-family: var(--mono);
   font-size: 0.82em;
   background: #ede7de;
@@ -1636,16 +1923,27 @@ textarea[readonly]:focus {
   border-radius: 3px;
 }
 
-.settings-divider {
-  border: none;
-  border-top: 1px solid #ddd4c6;
-}
-
 .settings-code-field {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--mono);
   font-size: 0.82rem;
   resize: vertical;
   line-height: 1.55;
+}
+
+.settings-code-field:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-reset-btn {
+  margin-top: 0.5rem;
 }
 
 .settings-actions {
@@ -1661,8 +1959,12 @@ textarea[readonly]:focus {
 }
 
 @media (max-width: 800px) {
-  .settings-section {
-    grid-template-columns: 1fr;
+  .settings-row-summary {
+    flex-wrap: wrap;
+  }
+
+  .settings-row-preview {
+    flex-basis: 100%;
   }
 }
 

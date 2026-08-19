@@ -1,0 +1,154 @@
+<div class="prompt-form-grid">
+
+  <div class="prompt-form-left">
+    <div class="form-field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required autofocus
+        value="{{ prompt.name if prompt else '' }}" placeholder="e.g. Candidate detection">
+    </div>
+
+    <div class="form-field">
+      <label for="output_format">Output format</label>
+      <select id="output_format" name="output_format">
+        <option value="" {% if prompt and (not prompt.output_format or prompt.output_format == 'regex') %}selected{% endif %}>None (free text)</option>
+        <option value="detailed" {% if not prompt or prompt.output_format == "detailed" %}selected{% endif %}>Detailed</option>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label for="host">Host</label>
+      <select id="host" name="host" required>
+        <option value="" disabled selected>Loading hosts…</option>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label for="model">Model</label>
+      <select id="model" name="model" required>
+        <option value="" disabled selected>Select a host first</option>
+      </select>
+      <p id="model-error" class="portal-error" style="display:none"></p>
+    </div>
+
+    <div class="form-field">
+      <label for="temperature">Temperature <span class="field-hint">(optional)</span></label>
+      <input type="number" id="temperature" name="temperature"
+        min="0" max="2" step="0.05" placeholder="Model default"
+        value="{{ prompt.temperature if prompt and prompt.temperature is not none else '' }}">
+    </div>
+
+    <div class="form-field">
+      <label for="num_ctx">Context window <span class="field-hint">(optional)</span></label>
+      <input type="number" id="num_ctx" name="num_ctx"
+        min="512" step="512" placeholder="Model default"
+        value="{{ prompt.num_ctx if prompt and prompt.num_ctx else '' }}">
+    </div>
+  </div>
+
+  <div class="prompt-form-right">
+
+    <div class="form-field">
+      <label class="exp-check prompt-inline-toggle">
+        <input type="checkbox" id="include_global_template" name="include_global_template"
+          {% if not prompt or prompt.include_global_template %}checked{% endif %}>
+        Include the global prompt for this prompt
+      </label>
+
+      <details class="prompt-review-row">
+        <summary>
+          <span class="prompt-review-title">Global prompt</span>
+          <span class="prompt-review-badge {{ 'is-custom' if global_meta.is_custom else 'is-default' }}">
+            {{ 'Custom' if global_meta.is_custom else 'Default' }}
+          </span>
+          <span class="prompt-review-preview">{{ global_meta.preview or 'Empty' }}</span>
+        </summary>
+        <div class="prompt-review-body">
+          <pre class="prompt-review-text">{{ user_settings.effective_global_template if user_settings else '' }}</pre>
+          <a href="{{ url_for('portal.settings') }}" class="exp-hint">Edit in Settings →</a>
+        </div>
+      </details>
+    </div>
+
+    <div class="form-field">
+      <span class="prompt-section-label">Input <span class="field-hint">(added automatically, before the main prompt)</span></span>
+
+      {% if position > 1 %}
+      <label class="exp-check prompt-inline-toggle">
+        <input type="checkbox" id="include_dialogue" name="include_dialogue"
+          {% if not prompt or prompt.include_dialogue %}checked{% endif %}>
+        Include dialogue input for this prompt
+      </label>
+      {% endif %}
+
+      <details class="prompt-review-row">
+        <summary>
+          <span class="prompt-review-title">Dialogue{% if position <= 1 %} <span class="field-hint">(always included for the first prompt)</span>{% endif %}</span>
+          <span class="prompt-review-preview">{{ input_preview.dialogue_preview or 'No dialogue sample resolved yet.' }}</span>
+        </summary>
+        <div class="prompt-review-body">
+          {% if input_preview.dialogue_text %}
+          <pre class="prompt-review-text">{{ input_preview.dialogue_text }}</pre>
+          <p class="exp-hint">Preview using sample dialogue <code>{{ input_preview.sample_dialogue.dialogue_external_id }}</code> ({{ input_preview.sample_dialogue.corpus_codename }}). At run time, each dialogue selected on the Experiment page is inserted here in this JSON format, one at a time.</p>
+          {% else %}
+          <p class="exp-hint">No dialogue sample resolved yet. Dialogues selected on the Experiment page are inserted here automatically, one at a time, as JSON.</p>
+          {% endif %}
+        </div>
+      </details>
+
+      <label class="exp-check prompt-inline-toggle">
+        <input type="checkbox" id="include_regex_candidates" name="include_regex_candidates"
+          {% if prompt and prompt.include_regex_candidates %}checked{% endif %}>
+        Include regex candidates for this prompt
+      </label>
+
+      <details class="prompt-review-row">
+        <summary>
+          <span class="prompt-review-title">Regex candidates</span>
+          <span class="prompt-review-preview">{{ input_preview.regex_preview }}</span>
+        </summary>
+        <div class="prompt-review-body">
+          <pre class="prompt-review-text">{{ input_preview.regex_text }}</pre>
+          <p class="exp-hint">Hits from the experiment's regex prompt, inserted automatically as optional hints — may be empty until a regex run completes.</p>
+        </div>
+      </details>
+
+      {% if position > 1 %}
+      <details class="prompt-review-row">
+        <summary>
+          <span class="prompt-review-title">Previous stage output</span>
+          <span class="prompt-review-preview">{{ input_preview.previous_preview }}</span>
+        </summary>
+        <div class="prompt-review-body">
+          <pre class="prompt-review-text">{{ input_preview.previous_text }}</pre>
+          <p class="exp-hint">Output from “{{ input_preview.previous_prompt.name if input_preview.previous_prompt else 'the previous prompt' }}”, inserted automatically — may be empty until that stage has run.</p>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+
+    <div class="form-field prompt-main-field">
+      <label for="prompt_text" class="prompt-main-label">Main prompt</label>
+      <textarea id="prompt_text" name="prompt_text" rows="16" required
+        class="prompt-main-textarea"
+        placeholder="Write the instructions for this stage.">{{ prompt.prompt_text if prompt else '' }}</textarea>
+      <p class="exp-hint">The only part of the prompt you write. Global prompt and input above, and output-format instructions below, are added automatically.</p>
+    </div>
+
+    <div class="form-field" id="appendix-section">
+      <span class="prompt-section-label">Output format instructions</span>
+      <details class="prompt-review-row">
+        <summary>
+          <span class="prompt-review-title">Output format instructions</span>
+          <span class="prompt-review-badge" id="appendix-badge"></span>
+          <span class="prompt-review-preview" id="appendix-preview-line"></span>
+        </summary>
+        <div class="prompt-review-body">
+          <pre class="prompt-review-text" id="appendix_preview"></pre>
+          <a href="{{ url_for('portal.settings') }}" class="exp-hint">Edit in Settings →</a>
+        </div>
+      </details>
+    </div>
+
+  </div>
+
+</div>

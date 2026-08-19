@@ -13,68 +13,165 @@
 
   <form method="post" action="{{ url_for('portal.save_settings') }}">
 
-    <div class="settings-section">
-      <div class="settings-section-label">
-        <h2>Global prompt template</h2>
-        <p>Prepended to every LLM prompt, before the prompt-specific text. Use this for a shared system context or persona. Leave empty to skip.</p>
-      </div>
-      <div class="form-field">
-        <textarea id="global_template" name="global_template" rows="5"
-          class="settings-code-field">{{ (us.global_template if us and us.global_template) or global_template_default }}</textarea>
-      </div>
+    <div class="settings-group">
+      <h2 class="settings-group-heading">Global Prompt</h2>
+
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Global prompt</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.global_template.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.global_template.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.global_template.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Prepended to every LLM prompt, before the prompt-specific text. Use this for a shared system context or persona. Leave empty to skip.</p>
+          <textarea id="global_template" name="global_template" rows="5"
+            class="settings-code-field">{{ (us.global_template if us and us.global_template) or global_template_default }}</textarea>
+          {% if field_meta.global_template.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="global_template">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
     </div>
 
-    <div class="settings-divider"></div>
+    <div class="settings-group">
+      <h2 class="settings-group-heading">Default Regex Patterns</h2>
 
-    <div class="settings-section">
-      <div class="settings-section-label">
-        <h2>Free text appendix</h2>
-        <p>Appended to prompts using the <strong>None (free text)</strong> output format. Use this to add any shared closing instruction for unstructured responses. Leave empty to append nothing.</p>
-      </div>
-      <div class="form-field">
-        <textarea id="free_text_appendix" name="free_text_appendix" rows="5"
-          class="settings-code-field" placeholder="No free text appendix configured.">{{ (us.free_text_appendix if us and us.free_text_appendix) or free_text_appendix_default }}</textarea>
-      </div>
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Default regex patterns</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.regex_patterns.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.regex_patterns.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.regex_patterns.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Used as the starting point when creating a new <strong>Regex</strong> prompt. Each pattern is a JSON object with <code>label</code>, <code>pattern</code>, and optional <code>flags</code> (<code>"i"</code> = case-insensitive, <code>"s"</code> = dot matches newline). Use <code>\\b</code> for word boundaries.</p>
+          <textarea id="regex_patterns" name="regex_patterns" rows="16"
+            class="settings-code-field">{{ (us.regex_patterns if us and us.regex_patterns) or regex_patterns_default }}</textarea>
+          {% if field_meta.regex_patterns.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="regex_patterns">Reset to default</button>
+          {% endif %}
+          <p class="exp-hint">{{ regex_format_help }}</p>
+        </div>
+      </details>
     </div>
 
-    <div class="settings-divider"></div>
+    <div class="settings-group">
+      <h2 class="settings-group-heading">Input Prompts</h2>
 
-    <div class="settings-section">
-      <div class="settings-section-label">
-        <h2>Simplified output appendix</h2>
-        <p>Appended to prompts using the <strong>Simplified</strong> output format. Instructs the model on the JSON structure to return for utterance-level candidate hits, including utterance indices and an exact quote.</p>
-      </div>
-      <div class="form-field">
-        <textarea id="simplified_appendix" name="simplified_appendix" rows="8"
-          class="settings-code-field">{{ (us.simplified_appendix if us and us.simplified_appendix) or simplified_appendix_default }}</textarea>
-      </div>
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Dialogue input</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.dialogue_input_instructions.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.dialogue_input_instructions.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.dialogue_input_instructions.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Introduces the automatic Dialogue JSON block that precedes every prompt's own text. Explains the shape of <code>dialogue.utterances</code> so the model knows how to read it.</p>
+          <textarea id="dialogue_input_instructions" name="dialogue_input_instructions" rows="5"
+            class="settings-code-field">{{ (us.dialogue_input_instructions if us and us.dialogue_input_instructions) or dialogue_input_instructions_default }}</textarea>
+          {% if field_meta.dialogue_input_instructions.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="dialogue_input_instructions">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Regex candidates input</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.regex_input_instructions.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.regex_input_instructions.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.regex_input_instructions.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Introduces the automatic Regex candidate JSON block, shown only for prompts with regex candidates enabled. Explains that these are pattern-matched hints, not confirmed findings.</p>
+          <textarea id="regex_input_instructions" name="regex_input_instructions" rows="5"
+            class="settings-code-field">{{ (us.regex_input_instructions if us and us.regex_input_instructions) or regex_input_instructions_default }}</textarea>
+          {% if field_meta.regex_input_instructions.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="regex_input_instructions">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Previous stage output input</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.previous_output_instructions.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.previous_output_instructions.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.previous_output_instructions.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Introduces the automatic Previous stage JSON block, shown for every prompt after the first in a chain. Explains that it holds the prior prompt's own output.</p>
+          <textarea id="previous_output_instructions" name="previous_output_instructions" rows="5"
+            class="settings-code-field">{{ (us.previous_output_instructions if us and us.previous_output_instructions) or previous_output_instructions_default }}</textarea>
+          {% if field_meta.previous_output_instructions.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="previous_output_instructions">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
     </div>
 
-    <div class="settings-divider"></div>
+    <div class="settings-group">
+      <h2 class="settings-group-heading">Output Type Prompts</h2>
 
-    <div class="settings-section">
-      <div class="settings-section-label">
-        <h2>Detailed output appendix</h2>
-        <p>Appended to prompts using the <strong>Detailed</strong> output format. Instructs the model to return span indices, exact quotes, and WMN type.</p>
-      </div>
-      <div class="form-field">
-        <textarea id="detailed_appendix" name="detailed_appendix" rows="12"
-          class="settings-code-field">{{ (us.detailed_appendix if us and us.detailed_appendix) or detailed_appendix_default }}</textarea>
-      </div>
-    </div>
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Free text appendix</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.free_text_appendix.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.free_text_appendix.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.free_text_appendix.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Appended to prompts using the <strong>None (free text)</strong> output format. Use this to add any shared closing instruction for unstructured responses. Leave empty to append nothing.</p>
+          <textarea id="free_text_appendix" name="free_text_appendix" rows="5"
+            class="settings-code-field" placeholder="No free text appendix configured.">{{ (us.free_text_appendix if us and us.free_text_appendix) or free_text_appendix_default }}</textarea>
+          {% if field_meta.free_text_appendix.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="free_text_appendix">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
 
-    <div class="settings-divider"></div>
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Simplified output appendix</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.simplified_appendix.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.simplified_appendix.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.simplified_appendix.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Appended to prompts using the <strong>Simplified</strong> output format. Instructs the model on the JSON structure to return for utterance-level candidate hits, including utterance indices and an exact quote.</p>
+          <textarea id="simplified_appendix" name="simplified_appendix" rows="8"
+            class="settings-code-field">{{ (us.simplified_appendix if us and us.simplified_appendix) or simplified_appendix_default }}</textarea>
+          {% if field_meta.simplified_appendix.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="simplified_appendix">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
 
-    <div class="settings-section">
-      <div class="settings-section-label">
-        <h2>Default regex patterns</h2>
-        <p>Used as the starting point when creating a new <strong>Regex</strong> prompt. Each pattern is a JSON object with <code>label</code>, <code>pattern</code>, and optional <code>flags</code> (<code>"i"</code> = case-insensitive, <code>"s"</code> = dot matches newline). Use <code>\\b</code> for word boundaries.</p>
-      </div>
-      <div class="form-field">
-        <textarea id="regex_patterns" name="regex_patterns" rows="16"
-          class="settings-code-field">{{ (us.regex_patterns if us and us.regex_patterns) or regex_patterns_default }}</textarea>
-        <p class="exp-hint">{{ regex_format_help }}</p>
-      </div>
+      <details class="settings-row">
+        <summary class="settings-row-summary">
+          <span class="settings-row-title">Detailed output appendix</span>
+          <span class="settings-row-badge {{ 'is-custom' if field_meta.detailed_appendix.is_custom else 'is-default' }}">
+            {{ 'Custom' if field_meta.detailed_appendix.is_custom else 'Default' }}
+          </span>
+          <span class="settings-row-preview">{{ field_meta.detailed_appendix.preview or 'Empty' }}</span>
+        </summary>
+        <div class="settings-row-body">
+          <p>Appended to prompts using the <strong>Detailed</strong> output format. Instructs the model to return span indices, exact quotes, and WMN type.</p>
+          <textarea id="detailed_appendix" name="detailed_appendix" rows="12"
+            class="settings-code-field">{{ (us.detailed_appendix if us and us.detailed_appendix) or detailed_appendix_default }}</textarea>
+          {% if field_meta.detailed_appendix.is_custom %}
+          <button type="button" class="button-secondary-sm settings-reset-btn" data-field="detailed_appendix">Reset to default</button>
+          {% endif %}
+        </div>
+      </details>
     </div>
 
     <div class="settings-actions">
@@ -84,4 +181,26 @@
 
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll(".settings-reset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!confirm("Reset this field to its default value? Unsaved edits on this page will be lost.")) {
+      return;
+    }
+    fetch("{{ url_for('portal.reset_settings_field') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "field=" + encodeURIComponent(btn.dataset.field),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Reset failed");
+        window.location.reload();
+      })
+      .catch((err) => alert(err.message));
+  });
+});
+</script>
 {% endblock %}

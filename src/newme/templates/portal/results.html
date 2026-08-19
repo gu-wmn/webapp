@@ -23,7 +23,7 @@
   {% if metrics.dialogues_with_human > 0 %}
   <div class="metrics-panel">
     <h2 class="metrics-heading">Evaluation vs. human annotations</h2>
-    <p class="metrics-note">Utterance-level matching: a predicted utterance counts as a true positive if a human annotator also marked that utterance.</p>
+    <p class="metrics-note">Label-aware overlap matching: a hit counts as a true positive if it shares a label with a human annotation covering any of the same utterance(s), regardless of the quote's exact position. Precision and recall are graded independently, so their counts don't have to match.</p>
     <div class="metrics-grid">
       <div class="metric-cell metric-cell-highlight">
         <span class="metric-value">{% if metrics.precision is not none %}{{ "%.0f"|format(metrics.precision * 100) }}%{% else %}—{% endif %}</span>
@@ -33,7 +33,7 @@
       <div class="metric-cell metric-cell-highlight">
         <span class="metric-value">{% if metrics.recall is not none %}{{ "%.0f"|format(metrics.recall * 100) }}%{% else %}—{% endif %}</span>
         <span class="metric-label">Recall</span>
-        <span class="metric-sub">{{ metrics.tp }} / {{ metrics.tp + metrics.fn }}</span>
+        <span class="metric-sub">{{ metrics.recall_tp }} / {{ metrics.recall_tp + metrics.fn }}</span>
       </div>
       <div class="metric-cell metric-cell-f1">
         <span class="metric-value">{% if metrics.f1 is not none %}{{ "%.0f"|format(metrics.f1 * 100) }}%{% else %}—{% endif %}</span>
@@ -76,12 +76,19 @@
         {% endif %}
         {% if m.human_count is defined and m.human_count > 0 %}
           {% if m.matched > 0 and m.matched == m.human_count %}
-            <span class="result-match-badge match-full" title="All {{ m.human_count }} human-annotated utterance(s) matched">&#10003; {{ m.matched }}/{{ m.human_count }}</span>
+            <span class="result-match-badge match-full" title="All {{ m.human_count }} human-annotated instance(s) matched">&#10003; {{ m.matched }}/{{ m.human_count }}</span>
           {% elif m.matched > 0 %}
-            <span class="result-match-badge match-partial" title="{{ m.matched }} of {{ m.human_count }} human utterance(s) matched">~ {{ m.matched }}/{{ m.human_count }}</span>
+            <span class="result-match-badge match-partial" title="{{ m.matched }} of {{ m.human_count }} human-annotated instance(s) matched">~ {{ m.matched }}/{{ m.human_count }}</span>
           {% else %}
-            <span class="result-match-badge match-miss" title="No human-annotated utterances matched">&#10007; 0/{{ m.human_count }}</span>
+            <span class="result-match-badge match-miss" title="No human-annotated instances matched">&#10007; 0/{{ m.human_count }}</span>
           {% endif %}
+        {% endif %}
+        {% if result.dialogue_char_count is not none or result.duration_seconds is not none %}
+        <span class="result-stat">
+          {%- if result.dialogue_char_count is not none %}{{ result.dialogue_char_count }} chars{% endif -%}
+          {%- if result.dialogue_char_count is not none and result.duration_seconds is not none %} &middot; {% endif -%}
+          {%- if result.duration_seconds is not none %}{{ "%.1f"|format(result.duration_seconds) }}s{% endif -%}
+        </span>
         {% endif %}
       </div>
     </a>

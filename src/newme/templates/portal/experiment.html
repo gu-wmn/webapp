@@ -78,24 +78,29 @@
   <section class="exp-section">
     <div class="exp-section-header">
       <h2>Regex pre-filter</h2>
-      <div class="exp-section-actions">
-        <a href="{{ url_for('portal.edit_regex', experiment_id=experiment.id) }}" class="button-secondary">Edit patterns</a>
-        <form method="post" action="{{ url_for('portal.toggle_regex', experiment_id=experiment.id) }}">
-          <button type="submit" class="{% if experiment.regex_enabled %}button-secondary{% else %}button{% endif %}">
-            {% if experiment.regex_enabled %}Disable{% else %}Enable{% endif %}
-          </button>
-        </form>
-      </div>
     </div>
+
+    <details class="prompt-review-row">
+      <summary>
+        <span class="prompt-review-title">Regex patterns</span>
+        <span class="prompt-review-badge {{ 'is-custom' if regex_meta.is_custom else 'is-default' }}">
+          {{ 'Custom' if regex_meta.is_custom else 'Default' }}
+        </span>
+        <span class="prompt-review-preview">{{ regex_meta.preview or 'Empty' }}</span>
+      </summary>
+      <div class="prompt-review-body">
+        <pre class="prompt-review-text">{{ regex_patterns_text }}</pre>
+        <a href="{{ url_for('portal.settings') }}" class="exp-hint">Edit in Settings →</a>
+      </div>
+    </details>
+
     <p class="exp-hint">
-      {% if experiment.regex_enabled %}
-        Enabled &mdash; {% if experiment.regex_patterns %}custom patterns{% else %}using default patterns{% endif %}.
-      {% else %}
-        Disabled &mdash; enable to run a regex pass before the LLM chain.
-      {% endif %}
+      Runs automatically whenever the dialogue sample is resolved. Each prompt in the chain
+      decides for itself whether to include the candidate hits, via that prompt's own
+      &ldquo;Include regex candidates&rdquo; toggle.
     </p>
 
-    {% if experiment.regex_enabled %}
+    {% if experiment.dialogues_resolved_at %}
     <div class="run-section">
       {% if latest_regex_run %}
         {% if latest_regex_run.status in ("running", "pending") %}
@@ -107,12 +112,16 @@
           <span class="run-progress-label">
             {{ latest_regex_run.processed_count }} / {{ latest_regex_run.total_count }}
           </span>
+          <button class="abort-run-btn" data-abort-url="{{ url_for('portal.abort_regex_run', run_id=latest_regex_run.id) }}">Abort</button>
         </div>
         {% elif latest_regex_run.status == "complete" %}
         <span class="run-status-badge run-complete">Complete</span>
         <span class="run-meta">{{ latest_regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
         <a href="{{ url_for('portal.regex_run_results', experiment_id=experiment.id) }}"
           class="button-secondary">View results</a>
+        {% elif latest_regex_run.status == "aborted" %}
+        <span class="run-status-badge run-aborted">Aborted</span>
+        <span class="run-meta">{{ latest_regex_run.completed_at.strftime('%Y-%m-%d %H:%M') if latest_regex_run.completed_at }}</span>
         {% elif latest_regex_run.status == "error" %}
         <span class="run-status-badge run-error">Error</span>
         <span class="run-meta run-error-msg" title="{{ latest_regex_run.error_message }}">
@@ -181,12 +190,17 @@
               <span class="run-progress-label">
                 {{ latest_run.processed_count }} / {{ latest_run.total_count }}
               </span>
+              <button class="abort-run-btn" data-abort-url="{{ url_for('portal.abort_run', run_id=latest_run.id) }}">Abort</button>
+              <div class="run-connection-warning" {% if not latest_run.last_error %}style="display:none"{% endif %}>{{ latest_run.last_error }}</div>
             </div>
             {% elif latest_run.status == "complete" %}
             <span class="run-status-badge run-complete">Complete</span>
             <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
             <a href="{{ url_for('portal.run_results', experiment_id=experiment.id, prompt_id=prompt.id) }}"
               class="button-secondary">View results</a>
+            {% elif latest_run.status == "aborted" %}
+            <span class="run-status-badge run-aborted">Aborted</span>
+            <span class="run-meta">{{ latest_run.completed_at.strftime('%Y-%m-%d %H:%M') if latest_run.completed_at }}</span>
             {% elif latest_run.status == "error" %}
             <span class="run-status-badge run-error">Error</span>
             <span class="run-meta run-error-msg" title="{{ latest_run.error_message }}">
@@ -231,14 +245,25 @@
     document.querySelectorAll(".run-btn, .regex-run-btn").forEach(b => b.disabled = false);
   }
 
+  const TERMINAL_STATUSES = ["complete", "error", "aborted"];
+
   function updateProgressEl(container, data) {
     const fill = container.querySelector(".progress-fill");
     const label = container.querySelector(".run-progress-label");
+    const warning = container.querySelector(".run-connection-warning");
     const pct = data.total_count > 0
       ? Math.round(data.processed_count / data.total_count * 100)
       : 0;
     if (fill) fill.style.width = pct + "%";
     if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
+    if (warning) {
+      if (data.last_error) {
+        warning.textContent = data.last_error;
+        warning.style.display = "";
+      } else {
+        warning.style.display = "none";
+      }
+    }
   }
 
   function pollRun(runId) {
@@ -248,7 +273,7 @@
         .then(data => {
           const container = document.querySelector(`.run-progress[data-run-id="${runId}"]`);
           if (container) updateProgressEl(container, data);
-          if (data.status === "complete" || data.status === "error") {
+          if (TERMINAL_STATUSES.includes(data.status)) {
             clearInterval(pollTimer);
             window.location.reload();
           }
@@ -264,7 +289,7 @@
         .then(data => {
           const container = document.querySelector(`.run-progress[data-regex-run-id="${runId}"]`);
           if (container) updateProgressEl(container, data);
-          if (data.status === "complete" || data.status === "error") {
+          if (TERMINAL_STATUSES.includes(data.status)) {
             clearInterval(pollTimer);
             window.location.reload();
           }
@@ -281,6 +306,64 @@
     pollRegexRun(el.dataset.regexRunId);
   });
 
+  // Wire up an abort button — used both for ones already in the page and
+  // ones we insert dynamically after starting a new run.
+  function wireAbortButton(btn) {
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", () => {
+      if (!confirm("Abort this run? Any dialogues not yet processed will be skipped.")) {
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Aborting…";
+
+      fetch(btn.dataset.abortUrl, { method: "POST" })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+            btn.disabled = false;
+            btn.textContent = "Abort";
+            return;
+          }
+          if (pollTimer) clearInterval(pollTimer);
+          window.location.reload();
+        })
+        .catch(err => {
+          alert(`Failed to abort run: ${err}`);
+          btn.disabled = false;
+          btn.textContent = "Abort";
+        });
+    });
+  }
+
+  document.querySelectorAll(".abort-run-btn").forEach(wireAbortButton);
+
+  // Build the "Running" progress UI immediately, instead of waiting on a
+  // page reload to reflect what the POST that started the run already told
+  // us — a reload can lag or hiccup, leaving a disabled button with no
+  // indication anything is happening until the user manually refreshes.
+  function showRunProgress(runBtn, { runId, totalCount, abortUrlBase, dataAttr }) {
+    const section = runBtn.closest(".run-section");
+    if (!section) return;
+
+    section.querySelectorAll(".run-progress, .run-status-badge, .run-meta, .button-secondary").forEach(el => el.remove());
+
+    const container = document.createElement("div");
+    container.className = "run-progress";
+    container.dataset[dataAttr] = runId;
+    container.innerHTML = `
+      <span class="run-status-badge run-running">Running</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+      <span class="run-progress-label">0 / ${totalCount}</span>
+      <button class="abort-run-btn" data-abort-url="${abortUrlBase}${runId}/abort">Abort</button>
+      <div class="run-connection-warning" style="display:none"></div>
+    `;
+    section.insertBefore(container, runBtn);
+    wireAbortButton(container.querySelector(".abort-run-btn"));
+  }
+
   // Wire up LLM run buttons.
   document.querySelectorAll(".run-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -296,8 +379,13 @@
             unlockRunButtons();
             return;
           }
+          showRunProgress(btn, {
+            runId: data.run_id,
+            totalCount: data.total_count,
+            abortUrlBase: "/api/runs/",
+            dataAttr: "runId",
+          });
           pollRun(data.run_id);
-          window.location.reload();
         })
         .catch(err => {
           alert(`Failed to start run: ${err}`);
@@ -320,8 +408,13 @@
             unlockRunButtons();
             return;
           }
+          showRunProgress(btn, {
+            runId: data.run_id,
+            totalCount: data.total_count,
+            abortUrlBase: "/api/regex-runs/",
+            dataAttr: "regexRunId",
+          });
           pollRegexRun(data.run_id);
-          window.location.reload();
         })
         .catch(err => {
           alert(`Failed to start regex run: ${err}`);

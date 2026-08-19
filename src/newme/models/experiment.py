@@ -25,47 +25,113 @@ FREE_TEXT_APPENDIX_DEFAULT = (
     "utterances from the dialogue. Avoid speculation beyond what the text supports."
 )
 
+# Canonical separator the model must use when a hit's quote spans multiple
+# utterances — see _QUOTE_FIELD_INSTRUCTIONS below. Kept as a constant because
+# portal.py's span-derivation and validation code must parse the exact same token.
+MULTI_UTTERANCE_QUOTE_SEPARATOR = " [...] "
+
+_QUOTE_FIELD_INSTRUCTIONS = (
+    "the exact verbatim text that motivated the hit — the specific word or "
+    "phrase itself, not the entire utterance it occurs in, unless the whole "
+    "utterance is genuinely what motivated the hit. If utterance_start_index "
+    "equals utterance_end_index, quote only that minimal exact excerpt from "
+    "within the utterance. If the hit spans multiple utterances, quote ONLY "
+    f'the exact text of the utterance_start_index utterance, followed by "'
+    f'{MULTI_UTTERANCE_QUOTE_SEPARATOR.strip()}", followed by the exact text of the '
+    "utterance_end_index utterance — do not include text from any utterance "
+    "in between, and do not paraphrase, summarize, or alter punctuation or spelling"
+)
+
+_LABEL_FIELD_INSTRUCTIONS = (
+    'one of "Trigger", "Indicator", or "Negotiation" — only use a label type '
+    "that was actually requested earlier in this prompt. Do not emit a label "
+    "that wasn't asked for just because it's listed here as a valid value; not "
+    "every label type applies to every prompt in the chain"
+)
+
 SIMPLIFIED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
+    '  - dialogue_id: the id for the dialogue\n'
     '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
     '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
-    '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - quote (string): the exact text that motivated the candidate hit\n\n'
+    f'  - label (string): {_LABEL_FIELD_INSTRUCTIONS}\n'
+    f'  - quote (string): {_QUOTE_FIELD_INSTRUCTIONS}\n\n'
     'If no WMN is found, return: {"hits": []}'
 )
 
 DETAILED_APPENDIX_DEFAULT = (
     'Output your findings as a JSON object with key "hits" containing an array.\n'
     'Each item must have:\n'
+    '  - dialogue_id: the id for the dialogue\n'
     '  - utterance_start_index (integer): inclusive start utterance index in dialogue.utterances\n'
     '  - utterance_end_index (integer): inclusive end utterance index in dialogue.utterances\n'
-    '  - label (string): "Trigger", "Indicator", or "Negotiation"\n'
-    '  - quote (string): the exact verbatim text from the utterance(s) that motivated the label\n'
-    '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n\n'
+    f'  - label (string): {_LABEL_FIELD_INSTRUCTIONS}\n'
+    f'  - quote (string): {_QUOTE_FIELD_INSTRUCTIONS}\n'
+    '  - wmn_type (string): "non-understanding", "disagreement", or "other"\n'
+    '  - wmn_group (integer): identifies which candidate WMN this hit belongs to '
+    "within this dialogue. If the dialogue contains more than one candidate WMN, "
+    "give the Trigger, Indicator, and Negotiation hits that together make up the "
+    "same WMN the same wmn_group number, and use a different number for each "
+    "separate WMN, starting from 1. If only one WMN is found, use 1\n\n"
     'If no WMN is found, return: {"hits": []}'
+)
+
+DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT = (
+    'Dialogue JSON — an object with a "dialogue" key containing "dialogue_id", '
+    '"corpus_codename", and "utterances": an ordered list of '
+    "{utterance_index, speaker, text} objects:"
+)
+
+REGEX_INPUT_INSTRUCTIONS_DEFAULT = (
+    'Regex candidate JSON (optional hints, may be empty) — an object with a "hits" '
+    "key containing an array of hit objects with at least utterance_start_index, "
+    "utterance_end_index, label, and quote. These come from pattern matching, not "
+    "model judgement — treat them as hints only:"
+)
+
+PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT = (
+    'Previous stage JSON (candidate hits from the prior prompt, may be empty) — an '
+    'object with a "hits" key, in the same shape as that prompt\'s output format '
+    'instructions produce. If a hit has a "wmn_group" field, every hit sharing the '
+    "same wmn_group number belongs to the same candidate WMN — treat them as one "
+    "linked set, not as independent candidates:"
 )
 
 DEFAULT_PROMPT_1_NAME = "Indicator detection"
 DEFAULT_PROMPT_1_MODEL = "qwen3:30b"
 DEFAULT_PROMPT_1_HOST = "http://merl.clasp.gu.se:11434"
-DEFAULT_PROMPT_1_OUTPUT_FORMAT = "simplified"
+DEFAULT_PROMPT_1_OUTPUT_FORMAT = "detailed"
 DEFAULT_PROMPT_1_TEXT = (
-    "The inputs below are JSON. The dialogue is in dialogue.utterances. Regex "
-    "candidate hits are optional hints only and may be empty.\n\n"
-    "Dialogue JSON:\n"
-    "{dialogue}\n\n"
-    "Regex candidate JSON:\n"
-    "{regex_candidates}\n\n"
-    "An Indicator is an utterance that signals a need to discuss or clarify the "
-    "meaning of a word or phrase. It may take the form of a direct request for "
-    "clarification, a challenge to how a word is being used, or an expression of "
-    "non-understanding tied to a specific word or phrase.\n\n"
-    "Read the dialogue JSON and identify all utterances that could be Indicators. "
-    "Include uncertain cases — a later stage will determine which are genuine. "
-    "Prefer inclusion over exclusion. Use utterance_start_index and "
-    "utterance_end_index to refer to dialogue.utterances. For quote, include the "
-    "exact text in the utterance that motivated the candidate hit."
+    "Your task is to identify candidate Indicators of Word Meaning Negotiation "
+    "(WMN). The aim is to detect utterances that signal that the meaning or use "
+    "of a specific word or phrase has become an issue in the conversation.\n\n"
+    "A WMN involves a meta-linguistic shift: attention moves from the main "
+    "topic of the conversation toward the meaning, interpretation, or "
+    "appropriateness of a word or phrase. An Indicator is the utterance where "
+    "this shift becomes visible — it signals that the meaning or use of a word "
+    "or phrase may need to be clarified, questioned, challenged, or "
+    "discussed.\n\n"
+    "Indicators typically arise in one of two ways, though you don't need to "
+    "distinguish between them here:\n"
+    "- The speaker appears not to understand a word or phrase and requests or "
+    "signals a need for clarification of its meaning.\n"
+    "- The speaker appears to challenge the meaning, appropriateness, "
+    "interpretation, or applicability of a word or phrase in the current "
+    "context.\n\n"
+    "For each candidate, determine whether the utterance appears to focus on, "
+    "question, request clarification of, or challenge the meaning or use of a "
+    "word or phrase. Distinguish semantic or meta-linguistic issues from "
+    "simple mishearing, pronunciation, or requests for repetition — cases "
+    "that concern only what was heard or how something was pronounced should "
+    "normally not be treated as Indicators unless the meaning or use of the "
+    "expression is also at issue.\n\n"
+    "Be inclusive: a later stage will review each candidate and decide which "
+    "are genuine, so prefer including uncertain cases over excluding them. "
+    "The utterance doesn't need to be preceded by an identifiable trigger "
+    "word, and it doesn't need to be followed by any particular kind of "
+    "response — the key question is whether the utterance itself plausibly "
+    "functions as a signal that word meaning or word use has become relevant."
 )
 
 DEFAULT_PROMPT_2_NAME = "WMN validation"
@@ -73,51 +139,62 @@ DEFAULT_PROMPT_2_MODEL = "llama3.3:70b-instruct-q4_K_M"
 DEFAULT_PROMPT_2_HOST = "http://merl.clasp.gu.se:11434"
 DEFAULT_PROMPT_2_OUTPUT_FORMAT = "detailed"
 DEFAULT_PROMPT_2_TEXT = (
-    "The inputs below are JSON. The dialogue is in dialogue.utterances. The previous "
-    "stage output is candidate JSON that may be empty. Those candidates are "
-    "utterance-level hints, not final character-level spans.\n\n"
-    "Dialogue JSON:\n"
-    "{dialogue}\n\n"
-    "Previous stage JSON:\n"
-    "{previous_output}\n\n"
-    "You are reviewing candidate Indicator utterances to determine whether each "
-    "belongs to a genuine Word Meaning Negotiation (WMN).\n\n"
-    "A WMN occurs when a conversation shifts from its main topic to explicitly "
-    "discussing the meaning of a word or phrase — a meta-linguistic shift. "
-    "This shift is what distinguishes a WMN from ordinary conversation.\n\n"
-    "Every WMN follows a three-part structure:\n\n"
-    "Trigger: The utterance containing the specific word or phrase whose meaning "
-    "later becomes contested. The Trigger precedes the Indicator and may not be "
+    "You are reviewing previously identified candidate Indicator utterances to "
+    "determine whether each can be confirmed as part of a genuine Word Meaning "
+    "Negotiation (WMN).\n\n"
+    "The previous stage deliberately identified Indicators inclusively: a "
+    "candidate could be proposed even when its Trigger or subsequent "
+    "Negotiation was unclear or absent. In this review stage, apply a "
+    "stricter criterion. A candidate should be confirmed as a WMN only when "
+    "the surrounding dialogue provides evidence for a complete "
+    "Trigger–Indicator–Negotiation structure and a genuine meta-linguistic "
+    "shift.\n\n"
+    "A WMN occurs when a conversation shifts from its main topic to "
+    "discussing the meaning, interpretation, or use of a particular word or "
+    "phrase. This meta-linguistic shift distinguishes a WMN from ordinary "
+    "discussion of the topic itself.\n\n"
+    "A confirmed WMN has three parts:\n\n"
+    "Trigger: A preceding utterance containing the specific word or phrase "
+    "whose meaning, interpretation, or use is subsequently questioned, "
+    "challenged, or requested for clarification. The Trigger may not be "
     "recognisable as such until the Indicator appears.\n\n"
-    "Indicator: The utterance signalling that a word's meaning needs to be "
-    "discussed. It takes one of two forms:\n"
-    "- A clarification request: the listener does not understand the word and asks "
-    "for an explanation (NON — non-understanding)\n"
-    "- A meta-linguistic objection: the listener challenges the appropriateness or "
-    "meaning of the word in the given context (DIN — disagreement)\n\n"
-    "Negotiation: One or more response turns following the Indicator where the "
-    "meaning is actively discussed or explained. The Negotiation must reflect a "
-    "genuine meta-linguistic shift — the focus moves from the original topic to "
-    "the word's meaning itself, even if intertwined with the original discussion. "
-    "Multiple turns may constitute the Negotiation.\n\n"
-    "To confirm a WMN from each candidate Indicator:\n"
-    "1. Identify the specific word or phrase being questioned and locate it "
-    "precisely in a preceding utterance — this is the Trigger.\n"
-    "2. Check whether the response after the Indicator contains a meta-linguistic "
-    "shift. If the speaker ignores the question, changes subject, or only "
-    "continues the original topic without addressing the word's meaning, it is "
-    "not a WMN.\n"
-    "3. Confirm the issue is semantic — about what the word means — and not a "
-    "mishearing or pronunciation problem.\n"
-    "4. If all three parts are present and the meta-linguistic shift is clear, "
-    "confirm the WMN and classify it as NON (non-understanding) or DIN "
-    "(disagreement), or Other if neither clearly applies.\n\n"
-    "For each candidate, work through the steps above. Confirm or reject. "
-    "For confirmed WMNs, identify the Trigger word or phrase, the Indicator "
-    "utterance, and all Negotiation utterances. Reject any Indicator that does "
-    "not have a clear Trigger and Negotiation. Use utterance_start_index and "
-    "utterance_end_index to refer to dialogue.utterances. For quote, copy the "
-    "exact verbatim text from the utterance(s) that motivated the label."
+    "Indicator: An utterance signalling that the meaning, interpretation, or "
+    "use of a word or phrase has become an issue. The two main forms are:\n"
+    "- NON — non-understanding: the speaker does not understand an "
+    "expression or requests clarification of what it means.\n"
+    "- DIN — disagreement: the speaker challenges the meaning, "
+    "interpretation, appropriateness, or applicability of an expression in "
+    "the current context.\n"
+    "- Other: use only when the utterance clearly functions as a "
+    "meta-linguistic Indicator but does not fit NON or DIN.\n\n"
+    "Negotiation: One or more subsequent utterances in which participants "
+    "address the meaning, interpretation, or use of the Trigger expression. "
+    "The Negotiation must provide evidence of a genuine meta-linguistic "
+    "shift: attention moves from simply discussing the original topic to "
+    "discussing the expression itself. The Negotiation may be intertwined "
+    "with continued discussion of the original topic and may span multiple "
+    "turns.\n\n"
+    "For each candidate Indicator:\n"
+    "- Identify the particular word or phrase that the Indicator concerns. "
+    "Locate that expression in a preceding utterance. This is the Trigger.\n"
+    "- Examine the utterance or utterances following the Indicator. "
+    "Determine whether they actually address the meaning, interpretation, "
+    "or use of the Trigger expression. These constitute the Negotiation.\n"
+    "- Confirm that there is a genuine meta-linguistic shift. It is not "
+    "sufficient for the conversation merely to continue discussing the "
+    "underlying topic.\n"
+    "- Distinguish semantic or meta-linguistic issues from simple "
+    "mishearing, requests for repetition, or pronunciation problems. These "
+    "are not WMNs unless the meaning, interpretation, or use of the "
+    "expression itself also becomes an issue.\n"
+    "- Confirm the candidate as a WMN only if a clear Trigger, Indicator, "
+    "and Negotiation can all be identified and a genuine meta-linguistic "
+    "shift is present. Otherwise, reject it.\n"
+    "- For confirmed WMNs, classify the Indicator as NON, DIN, or Other.\n\n"
+    "Rejecting a candidate means it should not be included in your results. "
+    "This does not mean the original Indicator was unreasonable to propose "
+    "— it means the surrounding dialogue does not provide enough evidence "
+    "to confirm a complete WMN."
 )
 
 REGEX_FORMAT_HELP = (
@@ -203,6 +280,9 @@ class UserSettings(db.Model):
     simplified_appendix = db.Column(db.Text, nullable=True)
     detailed_appendix = db.Column('annotated_appendix', db.Text, nullable=True)
     regex_patterns = db.Column(db.Text, nullable=True)
+    dialogue_input_instructions = db.Column(db.Text, nullable=True)
+    regex_input_instructions = db.Column(db.Text, nullable=True)
+    previous_output_instructions = db.Column(db.Text, nullable=True)
 
     @property
     def effective_global_template(self) -> str:
@@ -224,6 +304,30 @@ class UserSettings(db.Model):
     def effective_regex_patterns(self) -> str:
         return self.regex_patterns if self.regex_patterns is not None else REGEX_PATTERNS_DEFAULT
 
+    @property
+    def effective_dialogue_input_instructions(self) -> str:
+        return (
+            self.dialogue_input_instructions
+            if self.dialogue_input_instructions is not None
+            else DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT
+        )
+
+    @property
+    def effective_regex_input_instructions(self) -> str:
+        return (
+            self.regex_input_instructions
+            if self.regex_input_instructions is not None
+            else REGEX_INPUT_INSTRUCTIONS_DEFAULT
+        )
+
+    @property
+    def effective_previous_output_instructions(self) -> str:
+        return (
+            self.previous_output_instructions
+            if self.previous_output_instructions is not None
+            else PREVIOUS_OUTPUT_INSTRUCTIONS_DEFAULT
+        )
+
 
 class Experiment(db.Model):
     __tablename__ = "experiments"
@@ -236,9 +340,6 @@ class Experiment(db.Model):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-
-    regex_enabled = db.Column(db.Boolean, nullable=False, default=False)
-    regex_patterns = db.Column(db.Text, nullable=True)
 
     corpus_filter = db.Column(db.JSON, nullable=False, default=list)
     wmn_type_filter = db.Column(
@@ -300,6 +401,8 @@ class Prompt(db.Model):
     host = db.Column(db.String, nullable=True)
     model = db.Column(db.String, nullable=False)
     include_global_template = db.Column(db.Boolean, nullable=False, default=True)
+    include_dialogue = db.Column(db.Boolean, nullable=False, default=True)
+    include_regex_candidates = db.Column(db.Boolean, nullable=False, default=False)
     system_prompt = db.Column(db.Text, nullable=True)
     prompt_text = db.Column(db.Text, nullable=False)
     output_format = db.Column(db.String, nullable=True)  # "simplified", "detailed", or None
@@ -329,6 +432,7 @@ class Run(db.Model):
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
 
     results = db.relationship(
         "RunResult",
@@ -349,6 +453,8 @@ class RunResult(db.Model):
     output = db.Column(db.JSON, nullable=True)
     raw_response = db.Column(db.Text, nullable=True)
     error = db.Column(db.Text, nullable=True)
+    dialogue_char_count = db.Column(db.Integer, nullable=True)
+    duration_seconds = db.Column(db.Float, nullable=True)
 
 
 class RegexRun(db.Model):
@@ -383,3 +489,5 @@ class RegexRunResult(db.Model):
     corpus_codename = db.Column(db.String, nullable=False)
     output = db.Column(db.JSON, nullable=True)
     error = db.Column(db.Text, nullable=True)
+    dialogue_char_count = db.Column(db.Integer, nullable=True)
+    duration_seconds = db.Column(db.Float, nullable=True)

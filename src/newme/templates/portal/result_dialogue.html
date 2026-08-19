@@ -13,6 +13,12 @@
     <p><b>Run completed:</b> {{ run.completed_at.strftime('%Y-%m-%d %H:%M') }}</p>
     <p><b>LLM hits:</b> {{ llm_hit_count }}</p>
     <p><b>Human WMNs:</b> {{ human_sequences | length }}</p>
+    {% if result.dialogue_char_count is not none %}
+    <p><b>Dialogue length:</b> {{ result.dialogue_char_count }} characters</p>
+    {% endif %}
+    {% if result.duration_seconds is not none %}
+    <p><b>Processing time:</b> {{ "%.1f"|format(result.duration_seconds) }}s</p>
+    {% endif %}
   </div>
 
   {% if utterances_missing %}
@@ -50,11 +56,25 @@
         {% endif %}
 
         {% if llm_label_links %}
-        <div class="label-chip-row">
-          {% for label in llm_label_links %}
-          <a class="tag {{ label.name }}" href="#{{ label.anchor_id }}">{{ label.name }}{% if label.wmn_type %} <span class="chip-wmn-type">({{ label.wmn_type }})</span>{% endif %}: {{ label.excerpt[:30] }}{% if label.excerpt|length > 30 %}...{% endif %}</a>
-          {% endfor %}
+        {% for grp in llm_label_groups %}
+        <div class="wmn-group-block">
+          {% if grp.group is not none %}
+          <p class="wmn-group-heading">
+            WMN {{ grp.group }}
+            {% if grp.matched_sequence %}
+            <span class="wmn-match-badge wmn-match-yes">&#8596; human WMN {{ grp.matched_sequence }}</span>
+            {% else %}
+            <span class="wmn-match-badge wmn-match-no">&#9888; no matching annotation</span>
+            {% endif %}
+          </p>
+          {% endif %}
+          <div class="label-chip-row">
+            {% for label in grp.links %}
+            <a class="tag {{ label.name }}" href="#{{ label.anchor_id }}">{{ label.name }}{% if label.wmn_type %} <span class="chip-wmn-type">({{ label.wmn_type }})</span>{% endif %}: {{ label.excerpt[:30] }}{% if label.excerpt|length > 30 %}...{% endif %}</a>
+            {% endfor %}
+          </div>
         </div>
+        {% endfor %}
         {% endif %}
       </div>
 
@@ -80,7 +100,7 @@
         <div class="wmn-tab-row" role="tablist" aria-label="WMNs for dialogue">
           {% for sequence in human_sequences %}
           <a
-            class="wmn-tab {% if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id %}selected{% endif %}"
+            class="wmn-tab {% if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id %}selected{% endif %} {% if sequence_matches.get(sequence.wmn_id) %}wmn-tab-matched{% endif %}"
             href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, wmn_id=sequence.wmn_id) }}"
             role="tab"
             aria-selected="{{ 'true' if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id else 'false' }}"
@@ -95,6 +115,12 @@
           <p><b>Meaning:</b> {{ selected_sequence.wmn_meaning }}</p>
           {% if selected_sequence.comment %}
           <p><b>Comment:</b> {{ selected_sequence.comment }}</p>
+          {% endif %}
+          {% set matched_group = sequence_matches.get(selected_sequence.wmn_id) %}
+          {% if matched_group %}
+          <p><span class="wmn-match-badge wmn-match-yes">&#8596; model WMN {{ matched_group }}</span></p>
+          {% else %}
+          <p><span class="wmn-match-badge wmn-match-no">&#9888; no matching model WMN</span></p>
           {% endif %}
         </div>
         {% endif %}
