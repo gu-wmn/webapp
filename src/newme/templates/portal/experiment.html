@@ -74,68 +74,17 @@
     </form>
   </section>
 
-  {# ── Regex pre-filter ─────────────────────────────────────────── #}
+  {# ── Dialogue viewer ──────────────────────────────────────────── #}
   <section class="exp-section">
     <div class="exp-section-header">
-      <h2>Regex pre-filter</h2>
+      <h2>Dialogues</h2>
     </div>
-
-    <details class="prompt-review-row">
-      <summary>
-        <span class="prompt-review-title">Regex patterns</span>
-        <span class="prompt-review-badge {{ 'is-custom' if regex_meta.is_custom else 'is-default' }}">
-          {{ 'Custom' if regex_meta.is_custom else 'Default' }}
-        </span>
-        <span class="prompt-review-preview">{{ regex_meta.preview or 'Empty' }}</span>
-      </summary>
-      <div class="prompt-review-body">
-        <pre class="prompt-review-text">{{ regex_patterns_text }}</pre>
-        <a href="{{ url_for('portal.settings') }}" class="exp-hint">Edit in Settings →</a>
-      </div>
-    </details>
-
-    <p class="exp-hint">
-      Runs automatically whenever the dialogue sample is resolved. Each prompt in the chain
-      decides for itself whether to include the candidate hits, via that prompt's own
-      &ldquo;Include regex candidates&rdquo; toggle.
-    </p>
 
     {% if experiment.dialogues_resolved_at %}
-    <div class="run-section">
-      {% if latest_regex_run %}
-        {% if latest_regex_run.status in ("running", "pending") %}
-        <div class="run-progress" data-regex-run-id="{{ latest_regex_run.id }}">
-          <span class="run-status-badge run-running">Running</span>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width:{{ ((latest_regex_run.processed_count / latest_regex_run.total_count * 100) if latest_regex_run.total_count else 0)|int }}%"></div>
-          </div>
-          <span class="run-progress-label">
-            {{ latest_regex_run.processed_count }} / {{ latest_regex_run.total_count }}
-          </span>
-          <button class="abort-run-btn" data-abort-url="{{ url_for('portal.abort_regex_run', run_id=latest_regex_run.id) }}">Abort</button>
-        </div>
-        {% elif latest_regex_run.status == "complete" %}
-        <span class="run-status-badge run-complete">Complete</span>
-        <span class="run-meta">{{ latest_regex_run.completed_at.strftime('%Y-%m-%d %H:%M') }}</span>
-        <a href="{{ url_for('portal.regex_run_results', experiment_id=experiment.id) }}"
-          class="button-secondary">View results</a>
-        {% elif latest_regex_run.status == "aborted" %}
-        <span class="run-status-badge run-aborted">Aborted</span>
-        <span class="run-meta">{{ latest_regex_run.completed_at.strftime('%Y-%m-%d %H:%M') if latest_regex_run.completed_at }}</span>
-        {% elif latest_regex_run.status == "error" %}
-        <span class="run-status-badge run-error">Error</span>
-        <span class="run-meta run-error-msg" title="{{ latest_regex_run.error_message }}">
-          {{ (latest_regex_run.error_message or '')[:80] }}{% if (latest_regex_run.error_message or '')|length > 80 %}…{% endif %}
-        </span>
-        {% endif %}
-      {% endif %}
-
-      <button class="regex-run-btn"
-        data-experiment-id="{{ experiment.id }}"
-        {% if active_run or active_regex_run %}disabled{% endif %}>
-        {% if latest_regex_run and latest_regex_run.status in ("complete", "error") %}Re-run{% else %}Run{% endif %}
-      </button>
-    </div>
+    <a href="{{ url_for('portal.experiment_dialogues', experiment_id=experiment.id) }}"
+      class="button-secondary">View dialogues</a>
+    {% else %}
+    <p class="exp-hint">Resolve a dialogue sample above to browse its dialogues.</p>
     {% endif %}
   </section>
 

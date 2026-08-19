@@ -95,23 +95,6 @@
         </div>
       </details>
 
-      <label class="exp-check prompt-inline-toggle">
-        <input type="checkbox" id="include_regex_candidates" name="include_regex_candidates"
-          {% if prompt and prompt.include_regex_candidates %}checked{% endif %}>
-        Include regex candidates for this prompt
-      </label>
-
-      <details class="prompt-review-row">
-        <summary>
-          <span class="prompt-review-title">Regex candidates</span>
-          <span class="prompt-review-preview">{{ input_preview.regex_preview }}</span>
-        </summary>
-        <div class="prompt-review-body">
-          <pre class="prompt-review-text">{{ input_preview.regex_text }}</pre>
-          <p class="exp-hint">Hits from the experiment's regex prompt, inserted automatically as optional hints — may be empty until a regex run completes.</p>
-        </div>
-      </details>
-
       {% if position > 1 %}
       <details class="prompt-review-row">
         <summary>

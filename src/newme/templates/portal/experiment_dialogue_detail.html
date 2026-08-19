@@ -1,0 +1,82 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ dialogue.dialogue_external_id }} — {{ experiment.name }}{% endblock %}
+
+{% block content %}
+<div class="portal-experiment">
+  <div class="portal-experiment-header">
+    <a href="{{ url_for('portal.experiment_dialogues', experiment_id=experiment.id) }}">&larr; Dialogues</a>
+    <h1>{{ dialogue.dialogue_external_id }}</h1>
+  </div>
+
+  <div class="meta-block">
+    <p><b>Corpus:</b> {{ dialogue.corpus_codename }}</p>
+  </div>
+
+  {% if not utterances %}
+  <div class="warning-callout" role="alert">
+    <p><strong>Warning: Dialogue unavailable</strong></p>
+    <p>The dialogue text could not be loaded.</p>
+  </div>
+  {% else %}
+  <section class="panel portal-results-column">
+    <div class="portal-column-above">
+      <div class="panel-header-row">
+        <h2>Human annotations</h2>
+      </div>
+
+      {% if human_sequences %}
+      <div class="wmn-tab-row" role="tablist" aria-label="WMNs for dialogue">
+        {% for sequence in human_sequences %}
+        <a
+          class="wmn-tab {% if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id %}selected{% endif %}"
+          href="{{ url_for('portal.experiment_dialogue_detail', experiment_id=experiment.id, dialogue_id=dialogue.id, wmn_id=sequence.wmn_id) }}"
+          role="tab"
+          aria-selected="{{ 'true' if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id else 'false' }}"
+        >{{ sequence.wmn_id }}</a>
+        {% endfor %}
+      </div>
+
+      {% if selected_sequence %}
+      <div class="meta-block">
+        <p><b>WMN ID:</b> {{ selected_sequence.wmn_id }}</p>
+        <p><b>Type:</b> {{ selected_sequence.wmn_type }}</p>
+        <p><b>Meaning:</b> {{ selected_sequence.wmn_meaning }}</p>
+        {% if selected_sequence.comment %}
+        <p><b>Comment:</b> {{ selected_sequence.comment }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if human_label_links %}
+      <div class="label-chip-row">
+        {% for label in human_label_links %}
+        <a class="tag {{ label.name }}" href="#{{ label.anchor_id }}">{{ label.name }}: {{ label.excerpt[:30] }}{% if label.excerpt|length > 30 %}...{% endif %}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="portal-empty">No human annotations found for this dialogue.</p>
+      {% endif %}
+    </div>
+
+    <div class="portal-dialogue-column">
+      {% if human_utterances %}
+      {% for utterance in human_utterances %}
+      <article class="utterance">
+        <p><b>[{{ utterance.author }}]</b></p>
+        <p>{{ utterance.text | safe }}</p>
+      </article>
+      {% endfor %}
+      {% else %}
+      {% for utterance in utterances %}
+      <article class="utterance">
+        <p><b>[{{ utterance.author }}]</b></p>
+        <p>{{ utterance.text }}</p>
+      </article>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

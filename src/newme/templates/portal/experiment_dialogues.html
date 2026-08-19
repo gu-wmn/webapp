@@ -1,0 +1,27 @@
+{% extends "portal/base.html" %}
+{% block title %}Dialogues — {{ experiment.name }}{% endblock %}
+
+{% block content %}
+<div class="portal-experiment">
+
+  <div class="portal-experiment-header">
+    <a href="{{ url_for('portal.experiment', experiment_id=experiment.id) }}">&larr; {{ experiment.name }}</a>
+    <h1>{{ experiment.name }} — Dialogues</h1>
+  </div>
+
+  <p class="results-meta">{{ dialogues | length }} dialogue(s)</p>
+
+  <div class="results-list">
+    {% for dialogue in dialogues %}
+    <a class="result-link-card result-item"
+      href="{{ url_for('portal.experiment_dialogue_detail', experiment_id=experiment.id, dialogue_id=dialogue.id) }}">
+      <div class="result-summary">
+        <span class="result-dialogue-id">{{ dialogue.dialogue_external_id }}</span>
+        <span class="result-corpus">{{ dialogue.corpus_codename }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

@@ -909,6 +909,86 @@ def resolve_experiment(experiment_id: int):
     return redirect(url_for("portal.experiment", experiment_id=exp.id))
 
 
+@bp.get("/experiments/<int:experiment_id>/dialogues")
+@login_required
+def experiment_dialogues(experiment_id: int):
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+
+    dialogues = (
+        ExperimentDialogue.query.filter_by(experiment_id=exp.id)
+        .order_by(ExperimentDialogue.dialogue_external_id)
+        .all()
+    )
+
+    return render_template(
+        "portal/experiment_dialogues.html",
+        user=user,
+        experiment=exp,
+        dialogues=dialogues,
+    )
+
+
+@bp.get("/experiments/<int:experiment_id>/dialogues/<int:dialogue_id>")
+@login_required
+def experiment_dialogue_detail(experiment_id: int, dialogue_id: int):
+    from .models import AnnotationSequence
+
+    user = session["user"]
+    exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
+    dialogue = ExperimentDialogue.query.filter_by(id=dialogue_id, experiment_id=exp.id).first_or_404()
+
+    utterances = _load_dialogue_utterances(dialogue.corpus_codename, dialogue.dialogue_external_id)
+
+    human_sequences = (
+        AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
+        .filter_by(
+            corpus_codename=dialogue.corpus_codename,
+            dialogue_external_id=dialogue.dialogue_external_id,
+        )
+        .order_by(AnnotationSequence.wmn_id.asc())
+        .all()
+    )
+    human_sequences = [
+        sequence
+        for sequence in human_sequences
+        if sequence.wmn_type in _VALID_WMN_VALUES
+        or (sequence.wmn_meaning or "").strip().lower() in _RESULT_WMN_MEANINGS
+    ]
+
+    selected_wmn_id = (request.args.get("wmn_id") or "").strip()
+    selected_sequence = None
+    if selected_wmn_id:
+        selected_sequence = next(
+            (sequence for sequence in human_sequences if sequence.wmn_id == selected_wmn_id),
+            None,
+        )
+    if selected_sequence is None and human_sequences:
+        selected_sequence = human_sequences[0]
+
+    human_utterances: list[dict[str, str]] = []
+    human_label_links: list[dict[str, str]] = []
+    if selected_sequence is not None and utterances:
+        human_labels = _sequence_label_payload(selected_sequence)
+        human_utterances, human_label_links = _annotate_dialogue_utterances(
+            utterances,
+            human_labels,
+            anchor_prefix="human-label",
+        )
+
+    return render_template(
+        "portal/experiment_dialogue_detail.html",
+        user=user,
+        experiment=exp,
+        dialogue=dialogue,
+        utterances=utterances,
+        human_sequences=human_sequences,
+        selected_sequence=selected_sequence,
+        human_utterances=human_utterances,
+        human_label_links=human_label_links,
+    )
+
+
 def _resolve_dialogues(exp: Experiment) -> None:
     from .models import AnnotationSequence
 
@@ -943,9 +1023,9 @@ def _resolve_dialogues(exp: Experiment) -> None:
     exp.dialogues_resolved_at = datetime.now(timezone.utc)
     db.session.commit()
 
-    _trigger_regex_run(exp)
 
-
+# Regex is disabled for now — nothing calls this, kept so it can be wired back
+# up (e.g. behind the same run-section UI) without rebuilding the logic.
 def _trigger_regex_run(exp: Experiment) -> None:
     from flask import current_app
 
