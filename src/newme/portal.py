@@ -1993,15 +1993,7 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         utterances,
         output_format=prompt.output_format,
     )
-    llm_utterances: list[dict[str, str]] = []
-    llm_label_links: list[dict[str, str]] = []
-    if utterances:
-        llm_utterances, llm_label_links = _annotate_dialogue_utterances(
-            utterances,
-            llm_labels,
-            anchor_prefix="llm-label",
-        )
-    llm_label_groups = _group_label_links_by_wmn(llm_label_links)
+    llm_hit_count = len(llm_labels)
 
     human_sequences = (
         AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
@@ -2023,37 +2015,87 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         _human_label_instances_with_sequence(human_sequences),
         _llm_hit_instances_with_group(result),
     )
-    for grp in llm_label_groups:
-        grp["matched_sequence"] = (
-            wmn_match["group_to_sequence"].get(grp["group"]) if grp["group"] is not None else None
-        )
-    sequence_matches = {
-        sequence.wmn_id: wmn_match["sequence_to_group"].get(sequence.wmn_id)
-        for sequence in human_sequences
-    }
+    group_to_sequence = wmn_match["group_to_sequence"]
+    sequence_to_group = wmn_match["sequence_to_group"]
 
-    selected_wmn_id = (request.args.get("wmn_id") or "").strip()
-    selected_sequence = None
-    if selected_wmn_id:
-        selected_sequence = next(
-            (sequence for sequence in human_sequences if sequence.wmn_id == selected_wmn_id),
+    # Unified tabs: one per model wmn_group (in first-seen order, matched or
+    # not), then one per human sequence that no group matched. This puts a
+    # single tab over both panels for every matched pair, plus a tab each for
+    # whichever side has no counterpart.
+    group_order: list[Any] = []
+    seen_groups: set[Any] = set()
+    for label in llm_labels:
+        group = label.get("wmn_group")
+        if group is not None and group not in seen_groups:
+            seen_groups.add(group)
+            group_order.append(group)
+
+    sequence_by_id = {sequence.wmn_id: sequence for sequence in human_sequences}
+
+    tabs: list[dict[str, Any]] = []
+    for group in group_order:
+        tabs.append({"group": group, "wmn_id": group_to_sequence.get(group)})
+    for sequence in human_sequences:
+        if sequence.wmn_id not in sequence_to_group:
+            tabs.append({"group": None, "wmn_id": sequence.wmn_id})
+
+    for index, tab in enumerate(tabs, start=1):
+        tab["label"] = f"WMN-{index}"
+        if tab["group"] is not None and tab["wmn_id"] is not None:
+            tab["kind"] = "matched"
+        elif tab["group"] is not None:
+            tab["kind"] = "model-only"
+        else:
+            tab["kind"] = "human-only"
+
+    req_group_raw = (request.args.get("group") or "").strip()
+    try:
+        req_group: Any = int(req_group_raw) if req_group_raw else None
+    except ValueError:
+        req_group = None
+    req_wmn_id = (request.args.get("wmn_id") or "").strip() or None
+
+    selected_tab = None
+    if req_group is not None or req_wmn_id is not None:
+        selected_tab = next(
+            (t for t in tabs if t["group"] == req_group and t["wmn_id"] == req_wmn_id),
             None,
         )
-    if selected_sequence is None and human_sequences:
-        selected_sequence = human_sequences[0]
+    if selected_tab is None and tabs:
+        selected_tab = tabs[0]
+
+    selected_group = selected_tab["group"] if selected_tab else None
+    selected_sequence = sequence_by_id.get(selected_tab["wmn_id"]) if selected_tab else None
+
+    # Older results (pre-wmn_group, e.g. the retired "simplified" output format)
+    # carry no group info to pair on — fall back to showing every hit
+    # regardless of the selected tab, matching how they rendered before tabs.
+    if group_order:
+        group_llm_labels = [
+            label for label in llm_labels
+            if selected_group is not None and label.get("wmn_group") == selected_group
+        ]
+    else:
+        group_llm_labels = llm_labels
+    llm_utterances: list[dict[str, str]] = []
+    llm_label_links: list[dict[str, str]] = []
+    if utterances:
+        llm_utterances, llm_label_links = _annotate_dialogue_utterances(
+            utterances,
+            group_llm_labels,
+            anchor_prefix="llm-label",
+        )
+    llm_label_groups = _group_label_links_by_wmn(llm_label_links) if llm_label_links else []
 
     human_utterances: list[dict[str, str]] = []
-    human_labels: list[dict[str, Any]] = []
     human_label_links: list[dict[str, str]] = []
-    if selected_sequence is not None and utterances:
-        human_labels = _sequence_label_payload(selected_sequence)
+    if utterances:
+        human_labels = _sequence_label_payload(selected_sequence) if selected_sequence else []
         human_utterances, human_label_links = _annotate_dialogue_utterances(
             utterances,
             human_labels,
             anchor_prefix="human-label",
         )
-
-    llm_hit_count = len(llm_labels)
 
     return render_template(
         "portal/result_dialogue.html",
@@ -2070,10 +2112,10 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         llm_label_links=llm_label_links,
         llm_label_groups=llm_label_groups,
         human_sequences=human_sequences,
-        sequence_matches=sequence_matches,
+        tabs=tabs,
+        selected_tab=selected_tab,
         selected_sequence=selected_sequence,
         human_utterances=human_utterances,
-        human_labels=human_labels,
         human_label_links=human_label_links,
     )
 

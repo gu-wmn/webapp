@@ -28,6 +28,30 @@
   </div>
   {% endif %}
 
+  {% if tabs %}
+  <div class="wmn-tab-row" role="tablist" aria-label="WMNs for dialogue">
+    {% for tab in tabs %}
+    <a
+      class="wmn-tab {% if selected_tab and tab.label == selected_tab.label %}selected{% endif %} {% if tab.kind == 'matched' %}wmn-tab-matched-pair{% else %}wmn-tab-unmatched{% endif %}"
+      href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=tab.group, wmn_id=tab.wmn_id) }}"
+      role="tab"
+      aria-selected="{{ 'true' if selected_tab and tab.label == selected_tab.label else 'false' }}"
+    >
+      {{ tab.label }}
+      <span class="wmn-tab-sub">
+        {%- if tab.kind == 'matched' -%}
+        (match)
+        {%- elif tab.kind == 'model-only' -%}
+        (model only)
+        {%- else -%}
+        (human only)
+        {%- endif -%}
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div class="portal-results-compare">
     <section class="panel portal-results-column">
       <div class="portal-column-above">
@@ -62,11 +86,6 @@
           <p class="wmn-group-heading">
             WMN {{ grp.group }}
             {% if grp.wmn_type %}<span class="chip-wmn-type">({{ grp.wmn_type }})</span>{% endif %}
-            {% if grp.matched_sequence %}
-            <span class="wmn-match-badge wmn-match-yes">&#8596; human WMN {{ grp.matched_sequence }}</span>
-            {% else %}
-            <span class="wmn-match-badge wmn-match-no">&#9888; no matching annotation</span>
-            {% endif %}
           </p>
           {% endif %}
           <div class="label-chip-row">
@@ -76,6 +95,8 @@
           </div>
         </div>
         {% endfor %}
+        {% elif selected_tab and selected_tab.kind == 'human-only' %}
+        <p class="portal-empty">No matching model WMN.</p>
         {% endif %}
       </div>
 
@@ -97,18 +118,6 @@
           <h2>Annotated WMN</h2>
         </div>
 
-        {% if human_sequences %}
-        <div class="wmn-tab-row" role="tablist" aria-label="WMNs for dialogue">
-          {% for sequence in human_sequences %}
-          <a
-            class="wmn-tab {% if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id %}selected{% endif %} {% if sequence_matches.get(sequence.wmn_id) %}wmn-tab-matched{% endif %}"
-            href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, wmn_id=sequence.wmn_id) }}"
-            role="tab"
-            aria-selected="{{ 'true' if selected_sequence and sequence.wmn_id == selected_sequence.wmn_id else 'false' }}"
-          >{{ sequence.wmn_id }}</a>
-          {% endfor %}
-        </div>
-
         {% if selected_sequence %}
         <div class="meta-block">
           <p><b>WMN ID:</b> {{ selected_sequence.wmn_id }}</p>
@@ -117,14 +126,7 @@
           {% if selected_sequence.comment %}
           <p><b>Comment:</b> {{ selected_sequence.comment }}</p>
           {% endif %}
-          {% set matched_group = sequence_matches.get(selected_sequence.wmn_id) %}
-          {% if matched_group %}
-          <p><span class="wmn-match-badge wmn-match-yes">&#8596; model WMN {{ matched_group }}</span></p>
-          {% else %}
-          <p><span class="wmn-match-badge wmn-match-no">&#9888; no matching model WMN</span></p>
-          {% endif %}
         </div>
-        {% endif %}
 
         {% if human_label_links %}
         <div class="label-chip-row">
@@ -133,8 +135,10 @@
           {% endfor %}
         </div>
         {% endif %}
-        {% else %}
+        {% elif not human_sequences %}
         <p class="portal-empty">No human annotations found for this dialogue.</p>
+        {% elif selected_tab and selected_tab.kind == 'model-only' %}
+        <p class="portal-empty">No matching human annotation.</p>
         {% endif %}
       </div>
 

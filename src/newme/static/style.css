@@ -1787,6 +1787,33 @@ textarea[readonly]:focus {
   box-shadow: inset 0 -3px 0 var(--wmn);
 }
 
+.wmn-tab-matched-pair {
+  box-shadow: inset 0 -3px 0 var(--wmn);
+}
+
+.wmn-tab-matched-pair.selected {
+  background: var(--wmn);
+  border-color: #2a6f41;
+}
+
+.wmn-tab-unmatched {
+  box-shadow: inset 0 -3px 0 #842029;
+}
+
+.wmn-tab-unmatched.selected {
+  background: #842029;
+  border-color: #63181f;
+}
+
+.wmn-tab-sub {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  opacity: 0.8;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .wmn-match-badge {
   display: inline-block;
   font-size: 0.72rem;
