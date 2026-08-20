@@ -161,6 +161,10 @@ a:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.wmn-type-grid {
+  row-gap: 0;
+}
+
 .align-end {
   align-items: end;
 }

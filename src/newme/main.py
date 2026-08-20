@@ -132,10 +132,7 @@ def main_page():
         summaries=summaries,
         num_results=len(summaries),
         filters=filters,
-        label_options=LABEL_OPTIONS,
-        context_options=CONTEXT_OPTIONS,
         group_by_options=GROUP_BY_OPTIONS,
-        corpus_options=corpus_options,
     )
 
 
@@ -353,18 +350,43 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
         for name, value in WMN_TYPE_OPTIONS
     ]
 
-    label_name_key = args.get("label-name") or ""
-    context_key = args.get("context") or ""
+    valid_label_names = {name for name, _ in LABEL_OPTIONS}
+    selected_label_names = set(args.getlist("label-name")) & valid_label_names
+    label_options = [
+        {
+            "name": name,
+            "value": value,
+            "checked": name in selected_label_names,
+        }
+        for name, value in LABEL_OPTIONS
+    ]
+
+    valid_context_names = {name for name, _ in CONTEXT_OPTIONS}
+    selected_context_names = set(args.getlist("context")) & valid_context_names
+    context_options = [
+        {
+            "name": name,
+            "value": value,
+            "checked": name in selected_context_names,
+        }
+        for name, value in CONTEXT_OPTIONS
+    ]
 
     group_by = (args.get("group-by") or "SEQUENCE").upper()
     allowed_groups = {name for name, _ in GROUP_BY_OPTIONS}
     if group_by not in allowed_groups:
         group_by = "SEQUENCE"
 
-    corpus_value = args.get("corpus") or ""
     valid_corpora = {item["codename"] for item in corpus_options}
-    if corpus_value not in valid_corpora:
-        corpus_value = ""
+    selected_corpus_values = set(args.getlist("corpus")) & valid_corpora
+    corpus_filter_options = [
+        {
+            "codename": item["codename"],
+            "fullname": item["fullname"],
+            "checked": item["codename"] in selected_corpus_values,
+        }
+        for item in corpus_options
+    ]
 
     selected_csv_columns = [
         key
@@ -387,11 +409,12 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
     return {
         "search": (args.get("search") or "").strip(),
         "search_cf": (args.get("search") or "").strip().casefold(),
-        "label_name_key": label_name_key,
-        "label_name": LABEL_VALUE_BY_NAME.get(label_name_key),
-        "context_key": context_key,
-        "context": CONTEXT_VALUE_BY_NAME.get(context_key),
-        "corpus": corpus_value,
+        "label_names": {LABEL_VALUE_BY_NAME[name] for name in selected_label_names},
+        "label_options": label_options,
+        "context_values": {CONTEXT_VALUE_BY_NAME[name] for name in selected_context_names},
+        "context_options": context_options,
+        "corpus_values": selected_corpus_values,
+        "corpus_options": corpus_filter_options,
         "group_by": group_by,
         "compact": args.get("mode") == "compact",
         "wmn_options": wmn_options,
@@ -744,10 +767,10 @@ def _is_matching_wmn(sequence: AnnotationSequence, filters: dict) -> bool:
     if sequence.wmn_type not in VALID_WMN_TYPES:
         return False
 
-    if filters["corpus"] and sequence.corpus_codename != filters["corpus"]:
+    if filters["corpus_values"] and sequence.corpus_codename not in filters["corpus_values"]:
         return False
 
-    if filters["context"] and sequence.context != filters["context"]:
+    if filters["context_values"] and sequence.context not in filters["context_values"]:
         return False
 
     if filters["selected_wmn_values"] and sequence.wmn_type not in filters["selected_wmn_values"]:
@@ -760,7 +783,7 @@ def _is_matching_label(label: AnnotationLabel, sequence: AnnotationSequence, fil
     if label.name not in VALID_LABELS:
         return False
 
-    if filters["label_name"] and label.name != filters["label_name"]:
+    if filters["label_names"] and label.name not in filters["label_names"]:
         return False
 
     if filters["search_cf"]:
