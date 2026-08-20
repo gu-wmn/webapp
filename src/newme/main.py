@@ -198,6 +198,7 @@ def dialogue_page(dialogue_id: str):
                 "wmn_id": sequence.wmn_id,
                 "context": sequence.context,
                 "wmn_type": sequence.wmn_type,
+                "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                 "wmn_meaning": sequence.wmn_meaning,
                 "triggers": grouped["Trigger"],
                 "indicators": grouped["Indicator"],
@@ -227,7 +228,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
     corpus = Corpus.query.filter_by(codename=sequence.corpus_codename).one_or_none()
 
     sibling_wmn_ids = [
-        row.wmn_id
+        {"wmn_id": row.wmn_id, "wmn_type_short": _wmn_type_short(row.wmn_type)}
         for row in AnnotationSequence.query.filter_by(dialogue_external_id=dialogue_id)
         .order_by(AnnotationSequence.wmn_id.asc())
         .all()
@@ -317,7 +318,11 @@ def label_page(excerpt_hash: str):
 
         sequence_entry = label_meta["sequence_ids"].setdefault(
             sequence.wmn_id,
-            {"dialogue_id": dialogue_id, "wmn_count": 0},
+            {
+                "dialogue_id": dialogue_id,
+                "wmn_count": 0,
+                "wmn_type_short": _wmn_type_short(sequence.wmn_type),
+            },
         )
         sequence_entry["wmn_count"] += 1
 

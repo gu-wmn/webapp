@@ -15,7 +15,7 @@
     <p><b>WMN sequences ({{ sequence_summaries|length }}):</b></p>
     <div class="tag-wrap">
       {% for sequence in sequence_summaries %}
-        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}</a>
+        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}<span class="wmn-type-badge">{{ sequence.wmn_type_short }}</span></a>
       {% endfor %}
     </div>
   </div>
@@ -26,7 +26,7 @@
     <div class="meta-block">
       <p><b>WMN ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}</a></p>
       <p><b>Context:</b> {{ sequence.context }}</p>
-      <p><b>WMN Type:</b> {{ sequence.wmn_type }}</p>
+      <p><b>WMN Type:</b> <span class="tag wmn-type-short">{{ sequence.wmn_type }}</span></p>
       <p><b>WMN Meaning:</b> {{ sequence.wmn_meaning }}</p>
     </div>
 

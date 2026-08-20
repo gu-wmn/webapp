@@ -27,7 +27,7 @@
       <h1 class="wmn-view-heading">WMN: <span class="wmn-title-id">{{ sequence.wmn_id }}</span></h1>
 
       <div class="meta-block">
-        <p><b>Type:</b> {{ sequence.wmn_type }}</p>
+        <p><b>Type:</b> <span class="tag wmn-type-short">{{ sequence.wmn_type }}</span></p>
         <p><b>Meaning:</b> {{ sequence.wmn_meaning }}</p>
         <p><b>Context:</b> {{ sequence.context }}</p>
         <p><b>Corpus:</b> {{ corpus.fullname if corpus else sequence.corpus_codename }}</p>
@@ -39,8 +39,8 @@
         {% if sibling_wmn_ids|length > 1 %}
           <p><b>Sequences for same dialogue:</b></p>
           <div class="tag-wrap">
-            {% for sibling_id in sibling_wmn_ids %}
-              <a class="tag wmn-id {% if sibling_id == sequence.wmn_id %}selected{% endif %}" href="{{ url_for('main.sequence_page', dialogue_id=sequence.dialogue_external_id, wmn_id=sibling_id) }}">{{ sibling_id }}</a>
+            {% for sibling in sibling_wmn_ids %}
+              <a class="tag wmn-id {% if sibling.wmn_id == sequence.wmn_id %}selected{% endif %}" href="{{ url_for('main.sequence_page', dialogue_id=sequence.dialogue_external_id, wmn_id=sibling.wmn_id) }}">{{ sibling.wmn_id }}<span class="wmn-type-badge">{{ sibling.wmn_type_short }}</span></a>
             {% endfor %}
           </div>
         {% endif %}

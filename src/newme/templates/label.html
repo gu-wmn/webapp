@@ -18,7 +18,7 @@
   <div class="tag-wrap">
     {% for wmn_id, data in label.sequence_ids.items() %}
       <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=data.dialogue_id, wmn_id=wmn_id) }}">
-        {{ wmn_id }}{% if data.wmn_count > 1 %} ({{ data.wmn_count }}){% endif %}
+        {{ wmn_id }}{% if data.wmn_count > 1 %} ({{ data.wmn_count }}){% endif %}<span class="wmn-type-badge">{{ data.wmn_type_short }}</span>
       </a>
     {% endfor %}
   </div>
