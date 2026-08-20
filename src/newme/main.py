@@ -450,6 +450,9 @@ def _summaries_by_sequence(
         if not _is_matching_wmn(sequence, filters):
             continue
 
+        if not _sequence_satisfies_label_filter(sequence, filters):
+            continue
+
         triggers: dict[str, dict] = {}
         indicators: dict[str, dict] = {}
         negotiations: list[dict[str, str]] = []
@@ -503,6 +506,9 @@ def _summaries_by_dialogue(
 
     for sequence in sequences:
         if not _is_matching_wmn(sequence, filters):
+            continue
+
+        if not _sequence_satisfies_label_filter(sequence, filters):
             continue
 
         matching_triggers: dict[str, int] = {}
@@ -588,6 +594,9 @@ def _summaries_by_label(
 
     for sequence in sequences:
         if not _is_matching_wmn(sequence, filters):
+            continue
+
+        if not _sequence_satisfies_label_filter(sequence, filters):
             continue
 
         for label in _sorted_labels(sequence.labels):
@@ -769,6 +778,17 @@ def _is_matching_wmn(sequence: AnnotationSequence, filters: dict) -> bool:
     return True
 
 
+def _label_matches_search(label: AnnotationLabel, sequence: AnnotationSequence, search_cf: str) -> bool:
+    if not search_cf:
+        return True
+
+    return (
+        search_cf in (label.excerpt or "").casefold().strip()
+        or search_cf in (sequence.dialogue_external_id or "").casefold()
+        or search_cf in (sequence.wmn_id or "").casefold()
+    )
+
+
 def _is_matching_label(label: AnnotationLabel, sequence: AnnotationSequence, filters: dict) -> bool:
     if label.name not in VALID_LABELS:
         return False
@@ -776,16 +796,20 @@ def _is_matching_label(label: AnnotationLabel, sequence: AnnotationSequence, fil
     if filters["label_names"] and label.name not in filters["label_names"]:
         return False
 
-    if filters["search_cf"]:
-        search = filters["search_cf"]
-        if (
-            search not in (label.excerpt or "").casefold().strip()
-            and search not in (sequence.dialogue_external_id or "").casefold()
-            and search not in (sequence.wmn_id or "").casefold()
-        ):
-            return False
+    return _label_matches_search(label, sequence, filters["search_cf"])
 
-    return True
+
+def _sequence_satisfies_label_filter(sequence: AnnotationSequence, filters: dict) -> bool:
+    present_types = {
+        label.name
+        for label in sequence.labels
+        if label.name in VALID_LABELS and _label_matches_search(label, sequence, filters["search_cf"])
+    }
+
+    if filters["label_names"]:
+        return filters["label_names"] <= present_types
+
+    return bool(present_types)
 
 
 def _add_label_count(bucket: dict[str, dict], excerpt: str, excerpt_hash: str, count: int = 1) -> None:
