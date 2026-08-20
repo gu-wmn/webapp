@@ -7,7 +7,7 @@ import re
 from collections import OrderedDict
 from urllib.parse import urlencode
 
-from flask import Blueprint, Response, abort, render_template, request, url_for
+from flask import Blueprint, Response, abort, g, render_template, request, url_for
 from markupsafe import Markup, escape
 from sqlalchemy.orm import selectinload
 
@@ -119,6 +119,8 @@ def with_filters(url: str) -> str:
         if key not in CARRY_OVER_EXCLUDED_PARAMS
     ]
     if not query_pairs:
+        query_pairs = getattr(g, "default_filter_query_pairs", [])
+    if not query_pairs:
         return url
 
     query_string = urlencode(query_pairs)
@@ -130,6 +132,14 @@ def with_filters(url: str) -> str:
 def main_page():
     corpus_options = _corpus_options()
     filters = _parse_filters(request.args, corpus_options)
+
+    if len(request.args) == 0:
+        # Nothing was submitted, so _parse_filters applied the implicit default WMN
+        # types. Materialize that default so links leaving this page carry it forward
+        # instead of silently dropping it.
+        g.default_filter_query_pairs = [
+            (name, "") for name, _ in WMN_TYPE_OPTIONS if name in DEFAULT_WMN_NAMES
+        ]
 
     sequences = (
         AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
@@ -389,7 +399,7 @@ def _parse_filters(args, corpus_options: list[dict], apply_default_wmn_types: bo
     selected_wmn_names = {
         name
         for name, _ in WMN_TYPE_OPTIONS
-        if args.get(name) == name
+        if name in args
     }
     if apply_default_wmn_types and len(args) == 0:
         selected_wmn_names = set(DEFAULT_WMN_NAMES)
