@@ -31,7 +31,6 @@ WMN_TYPE_OPTIONS = [
 DEFAULT_WMN_NAMES = {"NON", "DIN", "OTHER"}
 WMN_TYPE_BY_NAME = {name: value for name, value in WMN_TYPE_OPTIONS}
 WMN_TYPE_NAME_BY_VALUE = {value: name for name, value in WMN_TYPE_OPTIONS}
-WMN_TYPE_ORDER = {name: index for index, (name, _) in enumerate(WMN_TYPE_OPTIONS)}
 VALID_WMN_TYPES = set(WMN_TYPE_BY_NAME.values())
 
 LABEL_OPTIONS = [
@@ -536,16 +535,14 @@ def _summaries_by_dialogue(
                 "dialogue_id": dialogue_id,
                 "corpus_fullname": corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename),
                 "context": sequence.context,
-                "sequence_ids": set(),
-                "wmn_types": set(),
+                "sequence_ids": {},
                 "wmn_meanings": set(),
                 "triggers": {},
                 "indicators": {},
                 "negotiations": [],
             }
 
-        results[dialogue_id]["sequence_ids"].add(sequence.wmn_id)
-        results[dialogue_id]["wmn_types"].add(sequence.wmn_type)
+        results[dialogue_id]["sequence_ids"][sequence.wmn_id] = sequence.wmn_type
         results[dialogue_id]["wmn_meanings"].add(sequence.wmn_meaning)
 
         for excerpt, count in matching_triggers.items():
@@ -569,12 +566,10 @@ def _summaries_by_dialogue(
         final.append(
             {
                 **summary,
-                "sequence_ids": sorted(summary["sequence_ids"]),
-                "wmn_types": sorted(summary["wmn_types"]),
-                "wmn_type_shorts": sorted(
-                    {_wmn_type_short(wmn_type) for wmn_type in summary["wmn_types"]},
-                    key=lambda short: (WMN_TYPE_ORDER.get(short, len(WMN_TYPE_ORDER)), short),
-                ),
+                "sequence_ids": {
+                    wmn_id: _wmn_type_short(wmn_type)
+                    for wmn_id, wmn_type in sorted(summary["sequence_ids"].items())
+                },
                 "wmn_meanings": sorted(summary["wmn_meanings"]),
             }
         )
@@ -611,11 +606,11 @@ def _summaries_by_label(
                         sequence.wmn_id: {
                             "dialogue_id": sequence.dialogue_external_id,
                             "wmn_count": 1,
+                            "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                         }
                     },
                     "corpora": {corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename)},
                     "contexts": {sequence.context},
-                    "wmn_types": {sequence.wmn_type},
                     "wmn_meanings": {sequence.wmn_meaning},
                 }
             else:
@@ -626,6 +621,7 @@ def _summaries_by_label(
                     {
                         "dialogue_id": sequence.dialogue_external_id,
                         "wmn_count": 0,
+                        "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                     },
                 )
                 sequence_entry["wmn_count"] += 1
@@ -633,7 +629,6 @@ def _summaries_by_label(
                     corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename)
                 )
                 results[excerpt]["contexts"].add(sequence.context)
-                results[excerpt]["wmn_types"].add(sequence.wmn_type)
                 results[excerpt]["wmn_meanings"].add(sequence.wmn_meaning)
 
     final = []
@@ -645,11 +640,6 @@ def _summaries_by_label(
                 "dialogue_ids": sorted(summary["dialogue_ids"]),
                 "corpora": sorted(summary["corpora"]),
                 "contexts": sorted(summary["contexts"]),
-                "wmn_types": sorted(summary["wmn_types"]),
-                "wmn_type_shorts": sorted(
-                    {_wmn_type_short(wmn_type) for wmn_type in summary["wmn_types"]},
-                    key=lambda short: (WMN_TYPE_ORDER.get(short, len(WMN_TYPE_ORDER)), short),
-                ),
                 "wmn_meanings": sorted(summary["wmn_meanings"]),
             }
         )

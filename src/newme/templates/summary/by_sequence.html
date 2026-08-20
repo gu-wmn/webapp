@@ -1,8 +1,7 @@
 {% if filters.compact %}
   <article class="compact-summary">
-    <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) }}">{{ summary.wmn_id | highlight_search(filters.search) }}</a>
+    <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) }}">{{ summary.wmn_id | highlight_search(filters.search) }}<span class="wmn-type-badge">{{ summary.wmn_type_short }}</span></a>
     <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=summary.dialogue_id) }}">{{ summary.dialogue_id | highlight_search(filters.search) }}</a>
-    <span class="tag wmn-type-short">{{ summary.wmn_type_short }}</span>
 
     {% for label_text, label_data in summary.triggers.items() %}
       <a class="tag Trigger" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}

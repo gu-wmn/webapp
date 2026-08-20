@@ -453,6 +453,18 @@ body.modal-open {
   font-weight: 600;
 }
 
+.wmn-type-badge {
+  display: inline-block;
+  background: #e9e2d7;
+  color: #4a433a;
+  border-radius: 4px;
+  padding: 0.02rem 0.32rem;
+  margin-left: 0.32rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
 .wmn-id.selected {
   border-color: #a78248;
   font-weight: 700;
