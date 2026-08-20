@@ -1,13 +1,13 @@
 {% if filters.compact %}
   <article class="compact-summary">
-    <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) }}">{{ summary.wmn_id | highlight_search(filters.search) }}<span class="wmn-type-badge">{{ summary.wmn_type_short }}</span></a>
-    <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=summary.dialogue_id) }}">{{ summary.dialogue_id | highlight_search(filters.search) }}</a>
+    <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) | with_filters }}">{{ summary.wmn_id | highlight_search(filters.search) }}<span class="wmn-type-badge">{{ summary.wmn_type_short }}</span></a>
+    <a class="tag diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=summary.dialogue_id) | with_filters }}">{{ summary.dialogue_id | highlight_search(filters.search) }}</a>
 
     {% for label_text, label_data in summary.triggers.items() %}
-      <a class="tag Trigger" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
+      <a class="tag Trigger" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) | with_filters }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
     {% endfor %}
     {% for label_text, label_data in summary.indicators.items() %}
-      <a class="tag Indicator" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
+      <a class="tag Indicator" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) | with_filters }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
     {% endfor %}
     {% for negotiation in summary.negotiations %}
       <span class="tag Negotiation">{{ negotiation.excerpt | highlight_search(filters.search) }}</span>
@@ -18,9 +18,9 @@
     <div class="meta-block">
       <div class="summary-grid two">
         <div>
-          <p><b>WMN Sequence ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) }}">{{ summary.wmn_id | highlight_search(filters.search) }}</a></p>
+          <p><b>WMN Sequence ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) | with_filters }}">{{ summary.wmn_id | highlight_search(filters.search) }}</a></p>
           <p><b>Corpus:</b> {{ summary.corpus_fullname }}</p>
-          <p><b>Dialogue ID:</b> <a class="diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=summary.dialogue_id) }}">{{ summary.dialogue_id | highlight_search(filters.search) }}</a></p>
+          <p><b>Dialogue ID:</b> <a class="diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=summary.dialogue_id) | with_filters }}">{{ summary.dialogue_id | highlight_search(filters.search) }}</a></p>
         </div>
         <div>
           <p><b>Type:</b> <span class="tag wmn-type-short">{{ summary.wmn_type }}</span></p>
@@ -33,7 +33,7 @@
     {% if summary.triggers %}
       <p><b>Triggers:</b>
         {% for label_text, label_data in summary.triggers.items() %}
-          <a class="tag Trigger" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
+          <a class="tag Trigger" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) | with_filters }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
         {% endfor %}
       </p>
     {% endif %}
@@ -41,7 +41,7 @@
     {% if summary.indicators %}
       <p><b>Indicators:</b>
         {% for label_text, label_data in summary.indicators.items() %}
-          <a class="tag Indicator" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
+          <a class="tag Indicator" href="{{ url_for('main.label_page', excerpt_hash=label_data.hash) | with_filters }}">{{ label_text | highlight_search(filters.search) }}</a>{% if label_data.count > 1 %} ({{ label_data.count }}){% endif %}
         {% endfor %}
       </p>
     {% endif %}
@@ -54,6 +54,6 @@
       </p>
     {% endif %}
 
-    <p class="bottom-link"><a href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) }}">See entire sequence</a></p>
+    <p class="bottom-link"><a href="{{ url_for('main.sequence_page', dialogue_id=summary.dialogue_id, wmn_id=summary.wmn_id) | with_filters }}">See entire sequence</a></p>
   </article>
 {% endif %}

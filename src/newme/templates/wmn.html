@@ -2,6 +2,7 @@
 {% block title %}WMN {{ sequence.wmn_id }}{% endblock %}
 
 {% block content %}
+{% include "_filter_banner.html" %}
 <div class="two-col-layout">
   <aside class="panel sidebar">
     <h2>Labels</h2>
@@ -40,7 +41,7 @@
           <p><b>Sequences for same dialogue:</b></p>
           <div class="tag-wrap">
             {% for sibling in sibling_wmn_ids %}
-              <a class="tag wmn-id {% if sibling.wmn_id == sequence.wmn_id %}selected{% endif %}" href="{{ url_for('main.sequence_page', dialogue_id=sequence.dialogue_external_id, wmn_id=sibling.wmn_id) }}">{{ sibling.wmn_id }}<span class="wmn-type-badge">{{ sibling.wmn_type_short }}</span></a>
+              <a class="tag wmn-id {% if sibling.wmn_id == sequence.wmn_id %}selected{% endif %}" href="{{ url_for('main.sequence_page', dialogue_id=sequence.dialogue_external_id, wmn_id=sibling.wmn_id) | with_filters }}">{{ sibling.wmn_id }}<span class="wmn-type-badge">{{ sibling.wmn_type_short }}</span></a>
             {% endfor %}
           </div>
         {% endif %}
@@ -48,7 +49,7 @@
     </section>
 
     <section class="panel">
-      <h2 class="wmn-view-heading">Dialogue: <a class="diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=sequence.dialogue_external_id) }}">{{ sequence.dialogue_external_id }}</a></h2>
+      <h2 class="wmn-view-heading">Dialogue: <a class="diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=sequence.dialogue_external_id) | with_filters }}">{{ sequence.dialogue_external_id }}</a></h2>
 
       <div
         data-dialogue-window

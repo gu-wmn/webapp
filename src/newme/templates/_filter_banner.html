@@ -1,0 +1,6 @@
+{% if filters_active %}
+  <div class="filter-banner">
+    <span>Showing results from filters</span>
+    <a class="filter-banner-clear" href="{{ request.path }}" aria-label="Remove filters">&times;</a>
+  </div>
+{% endif %}

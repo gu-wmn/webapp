@@ -2,6 +2,7 @@
 {% block title %}Dialogue {{ dialogue_id }}{% endblock %}
 
 {% block content %}
+{% include "_filter_banner.html" %}
 <section class="panel">
   <div class="meta-block">
     <h1>Dialogue ID: <span class="diag-id">{{ dialogue_id }}</span></h1>
@@ -15,7 +16,7 @@
     <p><b>WMN sequences ({{ sequence_summaries|length }}):</b></p>
     <div class="tag-wrap">
       {% for sequence in sequence_summaries %}
-        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}<span class="wmn-type-badge">{{ sequence.wmn_type_short }}</span></a>
+        <a class="tag wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) | with_filters }}">{{ sequence.wmn_id }}<span class="wmn-type-badge">{{ sequence.wmn_type_short }}</span></a>
       {% endfor %}
     </div>
   </div>
@@ -24,7 +25,7 @@
 {% for sequence in sequence_summaries %}
   <section class="summary-card">
     <div class="meta-block">
-      <p><b>WMN ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">{{ sequence.wmn_id }}</a></p>
+      <p><b>WMN ID:</b> <a class="wmn-id" href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) | with_filters }}">{{ sequence.wmn_id }}</a></p>
       <p><b>Context:</b> {{ sequence.context }}</p>
       <p><b>WMN Type:</b> <span class="tag wmn-type-short">{{ sequence.wmn_type }}</span></p>
       <p><b>WMN Meaning:</b> {{ sequence.wmn_meaning }}</p>
@@ -54,7 +55,7 @@
       </p>
     {% endif %}
 
-    <p class="bottom-link"><a href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) }}">See entire sequence</a></p>
+    <p class="bottom-link"><a href="{{ url_for('main.sequence_page', dialogue_id=dialogue_id, wmn_id=sequence.wmn_id) | with_filters }}">See entire sequence</a></p>
   </section>
 {% endfor %}
 {% endblock %}

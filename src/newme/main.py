@@ -5,6 +5,7 @@ import hashlib
 import io
 import re
 from collections import OrderedDict
+from urllib.parse import urlencode
 
 from flask import Blueprint, Response, abort, render_template, request, url_for
 from markupsafe import Markup, escape
@@ -107,6 +108,24 @@ def highlight_search(text: object, search_term: str | None) -> Markup:
     return Markup("".join(chunks))
 
 
+CARRY_OVER_EXCLUDED_PARAMS = {"search", "label-name", "group-by"}
+
+
+@bp.app_template_filter("with_filters")
+def with_filters(url: str) -> str:
+    query_pairs = [
+        (key, value)
+        for key, value in request.args.items(multi=True)
+        if key not in CARRY_OVER_EXCLUDED_PARAMS
+    ]
+    if not query_pairs:
+        return url
+
+    query_string = urlencode(query_pairs)
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{query_string}"
+
+
 @bp.get("/")
 def main_page():
     corpus_options = _corpus_options()
@@ -181,11 +200,17 @@ def dialogue_page(dialogue_id: str):
 
     corpus = Corpus.query.filter_by(codename=sequences[0].corpus_codename).one_or_none()
 
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
     sequence_summaries: list[dict] = []
     for sequence in sequences:
+        if not _is_matching_wmn(sequence, filters) or not _sequence_satisfies_label_filter(sequence, filters):
+            continue
+
         grouped = {"Trigger": {}, "Indicator": {}, "Negotiation": {}}
         for label in _sorted_labels(sequence.labels):
-            if label.name not in VALID_LABELS:
+            if not _is_matching_label(label, sequence, filters):
                 continue
             excerpt = (label.excerpt or "").strip()
             if excerpt not in grouped[label.name]:
@@ -212,6 +237,7 @@ def dialogue_page(dialogue_id: str):
         dialogue_id=dialogue_id,
         corpus=corpus,
         sequence_summaries=sequence_summaries,
+        filters_active=_filters_are_active(filters),
     )
 
 
@@ -227,12 +253,17 @@ def sequence_page(dialogue_id: str, wmn_id: str):
 
     corpus = Corpus.query.filter_by(codename=sequence.corpus_codename).one_or_none()
 
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
     sibling_wmn_ids = [
         {"wmn_id": row.wmn_id, "wmn_type_short": _wmn_type_short(row.wmn_type)}
         for row in AnnotationSequence.query.filter_by(dialogue_external_id=dialogue_id)
         .order_by(AnnotationSequence.wmn_id.asc())
         .all()
         if row.wmn_type in VALID_WMN_TYPES
+        and _is_matching_wmn(row, filters)
+        and _sequence_satisfies_label_filter(row, filters)
     ]
 
     dialogue = (
@@ -262,7 +293,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
             "excerpt": label.excerpt,
         }
         for label in _sorted_labels(sequence.labels)
-        if label.name in VALID_LABELS
+        if _is_matching_label(label, sequence, filters)
     ]
 
     truncation = _label_truncation_bounds(labels, len(utterances))
@@ -288,6 +319,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
         label_links=label_links,
         truncation=truncation,
         dialogue_missing=dialogue_missing,
+        filters_active=_filters_are_active(filters),
     )
 
 
@@ -304,15 +336,27 @@ def label_page(excerpt_hash: str):
         abort(404)
 
     first_label, _ = rows[0]
+
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
+    matching_rows = [
+        (label, sequence)
+        for label, sequence in rows
+        if _is_matching_wmn(sequence, filters)
+        and _sequence_satisfies_label_filter(sequence, filters)
+        and _is_matching_label(label, sequence, filters)
+    ]
+
     label_meta = {
         "label_name": first_label.name,
         "excerpt": (first_label.excerpt or "").casefold().strip(),
-        "count": len(rows),
+        "count": len(matching_rows),
         "dialogue_ids": set(),
         "sequence_ids": {},
     }
 
-    for label, sequence in rows:
+    for label, sequence in matching_rows:
         dialogue_id = sequence.dialogue_external_id
         label_meta["dialogue_ids"].add(dialogue_id)
 
@@ -328,7 +372,12 @@ def label_page(excerpt_hash: str):
 
     label_meta["dialogue_ids"] = sorted(label_meta["dialogue_ids"])
 
-    return render_template("label.html", site_title=SITE_TITLE, label=label_meta)
+    return render_template(
+        "label.html",
+        site_title=SITE_TITLE,
+        label=label_meta,
+        filters_active=_filters_are_active(filters),
+    )
 
 
 @bp.get("/about")
@@ -336,13 +385,13 @@ def about_page():
     return render_template("about.html", site_title=SITE_TITLE)
 
 
-def _parse_filters(args, corpus_options: list[dict]) -> dict:
+def _parse_filters(args, corpus_options: list[dict], apply_default_wmn_types: bool = True) -> dict:
     selected_wmn_names = {
         name
         for name, _ in WMN_TYPE_OPTIONS
         if args.get(name) == name
     }
-    if len(args) == 0:
+    if apply_default_wmn_types and len(args) == 0:
         selected_wmn_names = set(DEFAULT_WMN_NAMES)
 
     wmn_options = [
@@ -430,6 +479,27 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
             if name in WMN_TYPE_BY_NAME
         },
     }
+
+
+def _parse_detail_page_filters(corpus_options: list[dict]) -> dict:
+    filters = _parse_filters(request.args, corpus_options, apply_default_wmn_types=False)
+    # Part of sequence (label type) and search don't carry over to detail pages -
+    # once a WMN sequence is shown, all of its labels are shown regardless of type
+    # or search match.
+    filters["label_names"] = set()
+    filters["search"] = ""
+    filters["search_cf"] = ""
+    return filters
+
+
+def _filters_are_active(filters: dict) -> bool:
+    return bool(
+        filters["search"]
+        or filters["label_names"]
+        or filters["context_values"]
+        or filters["corpus_values"]
+        or filters["selected_wmn_values"]
+    )
 
 
 def _corpus_options() -> list[dict]:
