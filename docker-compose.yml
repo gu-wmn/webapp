@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: newme:local
+    image: newme:latest
     ports:
       - "8000:8000"
     environment:
