@@ -182,18 +182,38 @@
     return;
   }
 
-  const appliedSearch = searchInput ? searchInput.defaultValue : "";
   const autoSubmitControls = filterForm.querySelectorAll("select, input[type='checkbox']");
 
   const submitFiltersFromChange = () => {
-    if (searchInput) {
-      searchInput.value = appliedSearch;
-    }
     filterForm.requestSubmit();
   };
 
   for (const control of autoSubmitControls) {
     control.addEventListener("change", submitFiltersFromChange);
+  }
+
+  const SEARCH_DEBOUNCE_MS = 250;
+  const SEARCH_FOCUS_KEY = "newme:search-focus-pending";
+  let searchDebounceTimer = null;
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+      }
+      searchDebounceTimer = setTimeout(() => {
+        searchDebounceTimer = null;
+        sessionStorage.setItem(SEARCH_FOCUS_KEY, "1");
+        filterForm.requestSubmit();
+      }, SEARCH_DEBOUNCE_MS);
+    });
+
+    if (sessionStorage.getItem(SEARCH_FOCUS_KEY)) {
+      sessionStorage.removeItem(SEARCH_FOCUS_KEY);
+      searchInput.focus();
+      const cursorPos = searchInput.value.length;
+      searchInput.setSelectionRange(cursorPos, cursorPos);
+    }
   }
 
   const openModal = () => {
