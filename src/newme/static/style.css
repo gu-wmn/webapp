@@ -531,7 +531,7 @@ a.diag-id:focus-visible {
 
 .search-hit {
   background: #ffef72;
-  color: inherit;
+  color: var(--ink);
   border-radius: 2px;
   padding: 0;
 }
