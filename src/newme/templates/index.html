@@ -21,50 +21,72 @@
     </div>
 
     <div class="field-grid three">
-      <div>
-        <label for="label-name">Part of sequence</label>
-        <select id="label-name" name="label-name">
-          <option value="">--no selection--</option>
-          {% for label_name, label_value in label_options %}
-            <option value="{{ label_name }}" {% if filters.label_name_key == label_name %}selected{% endif %}>{{ label_value }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <fieldset class="wmn-types">
+        <legend>Part of sequence</legend>
+        {% for option in filters.label_options %}
+          <label class="checkbox-row" for="label-name-{{ option.name }}">
+            <input
+              id="label-name-{{ option.name }}"
+              type="checkbox"
+              name="label-name"
+              value="{{ option.name }}"
+              {% if option.checked %}checked{% endif %}
+            >
+            <span>{{ option.value }}</span>
+            <span class="option-count">{{ option.count }}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
 
-      <div>
-        <label for="context">Interaction type</label>
-        <select id="context" name="context">
-          <option value="">--no selection--</option>
-          {% for context_name, context_value in context_options %}
-            <option value="{{ context_name }}" {% if filters.context_key == context_name %}selected{% endif %}>{{ context_value }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <fieldset class="wmn-types">
+        <legend>Interaction type</legend>
+        {% for option in filters.context_options %}
+          <label class="checkbox-row" for="context-{{ option.name }}">
+            <input
+              id="context-{{ option.name }}"
+              type="checkbox"
+              name="context"
+              value="{{ option.name }}"
+              {% if option.checked %}checked{% endif %}
+            >
+            <span>{{ option.value }}</span>
+            <span class="option-count">{{ option.count }}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
 
-      <div>
-        <label for="corpus">Corpus</label>
-        <select id="corpus" name="corpus">
-          <option value="">--no selection--</option>
-          {% for corpus in corpus_options %}
-            <option value="{{ corpus.codename }}" {% if filters.corpus == corpus.codename %}selected{% endif %}>{{ corpus.fullname }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <fieldset class="wmn-types">
+        <legend>Corpus</legend>
+        {% for corpus in filters.corpus_options %}
+          <label class="checkbox-row" for="corpus-{{ corpus.codename }}">
+            <input
+              id="corpus-{{ corpus.codename }}"
+              type="checkbox"
+              name="corpus"
+              value="{{ corpus.codename }}"
+              {% if corpus.checked %}checked{% endif %}
+            >
+            <span>{{ corpus.fullname }}</span>
+            <span class="option-count">{{ corpus.count }}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
     </div>
 
     <fieldset class="wmn-types">
       <legend>Type of sequence</legend>
-      <div class="field-grid three">
+      <div class="field-grid three wmn-type-grid">
         {% for option in filters.wmn_options %}
           <label class="checkbox-row" for="wmn-{{ option.name }}">
             <input
               id="wmn-{{ option.name }}"
               type="checkbox"
               name="{{ option.name }}"
-              value="{{ option.name }}"
+              value=""
               {% if option.checked %}checked{% endif %}
             >
-            <span>{{ option.value }}</span>
+            <span>{{ option.value }} ({{ option.name }})</span>
+            <span class="option-count">{{ option.count }}</span>
           </label>
         {% endfor %}
       </div>
@@ -88,7 +110,6 @@
       </div>
 
       <div class="actions">
-        <button type="submit">Apply filters</button>
         <button id="open-csv-download" type="button">
           Download CSV
         </button>
@@ -165,18 +186,38 @@
     return;
   }
 
-  const appliedSearch = searchInput ? searchInput.defaultValue : "";
   const autoSubmitControls = filterForm.querySelectorAll("select, input[type='checkbox']");
 
   const submitFiltersFromChange = () => {
-    if (searchInput) {
-      searchInput.value = appliedSearch;
-    }
     filterForm.requestSubmit();
   };
 
   for (const control of autoSubmitControls) {
     control.addEventListener("change", submitFiltersFromChange);
+  }
+
+  const SEARCH_DEBOUNCE_MS = 250;
+  const SEARCH_FOCUS_KEY = "newme:search-focus-pending";
+  let searchDebounceTimer = null;
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+      }
+      searchDebounceTimer = setTimeout(() => {
+        searchDebounceTimer = null;
+        sessionStorage.setItem(SEARCH_FOCUS_KEY, "1");
+        filterForm.requestSubmit();
+      }, SEARCH_DEBOUNCE_MS);
+    });
+
+    if (sessionStorage.getItem(SEARCH_FOCUS_KEY)) {
+      sessionStorage.removeItem(SEARCH_FOCUS_KEY);
+      searchInput.focus();
+      const cursorPos = searchInput.value.length;
+      searchInput.setSelectionRange(cursorPos, cursorPos);
+    }
   }
 
   const openModal = () => {

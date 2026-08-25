@@ -5,8 +5,9 @@ import hashlib
 import io
 import re
 from collections import OrderedDict
+from urllib.parse import urlencode
 
-from flask import Blueprint, Response, abort, render_template, request, url_for
+from flask import Blueprint, Response, abort, g, render_template, request, url_for
 from markupsafe import Markup, escape
 from sqlalchemy.orm import selectinload
 
@@ -31,7 +32,6 @@ WMN_TYPE_OPTIONS = [
 DEFAULT_WMN_NAMES = {"NON", "DIN", "OTHER"}
 WMN_TYPE_BY_NAME = {name: value for name, value in WMN_TYPE_OPTIONS}
 WMN_TYPE_NAME_BY_VALUE = {value: name for name, value in WMN_TYPE_OPTIONS}
-WMN_TYPE_ORDER = {name: index for index, (name, _) in enumerate(WMN_TYPE_OPTIONS)}
 VALID_WMN_TYPES = set(WMN_TYPE_BY_NAME.values())
 
 LABEL_OPTIONS = [
@@ -108,16 +108,46 @@ def highlight_search(text: object, search_term: str | None) -> Markup:
     return Markup("".join(chunks))
 
 
+CARRY_OVER_EXCLUDED_PARAMS = {"search", "label-name", "group-by"}
+
+
+@bp.app_template_filter("with_filters")
+def with_filters(url: str) -> str:
+    query_pairs = [
+        (key, value)
+        for key, value in request.args.items(multi=True)
+        if key not in CARRY_OVER_EXCLUDED_PARAMS
+    ]
+    if not query_pairs:
+        query_pairs = getattr(g, "default_filter_query_pairs", [])
+    if not query_pairs:
+        return url
+
+    query_string = urlencode(query_pairs)
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{query_string}"
+
+
 @bp.get("/")
 def main_page():
     corpus_options = _corpus_options()
     filters = _parse_filters(request.args, corpus_options)
+
+    if len(request.args) == 0:
+        # Nothing was submitted, so _parse_filters applied the implicit default WMN
+        # types. Materialize that default so links leaving this page carry it forward
+        # instead of silently dropping it.
+        g.default_filter_query_pairs = [
+            (name, "") for name, _ in WMN_TYPE_OPTIONS if name in DEFAULT_WMN_NAMES
+        ]
 
     sequences = (
         AnnotationSequence.query.options(selectinload(AnnotationSequence.labels))
         .order_by(AnnotationSequence.id.asc())
         .all()
     )
+
+    _annotate_filter_option_counts(filters, sequences)
 
     if filters["group_by"] == "DIALOGUE":
         summaries = _summaries_by_dialogue(sequences, filters, corpus_options)
@@ -132,10 +162,7 @@ def main_page():
         summaries=summaries,
         num_results=len(summaries),
         filters=filters,
-        label_options=LABEL_OPTIONS,
-        context_options=CONTEXT_OPTIONS,
         group_by_options=GROUP_BY_OPTIONS,
-        corpus_options=corpus_options,
     )
 
 
@@ -185,11 +212,17 @@ def dialogue_page(dialogue_id: str):
 
     corpus = Corpus.query.filter_by(codename=sequences[0].corpus_codename).one_or_none()
 
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
     sequence_summaries: list[dict] = []
     for sequence in sequences:
+        if not _is_matching_wmn(sequence, filters) or not _sequence_satisfies_label_filter(sequence, filters):
+            continue
+
         grouped = {"Trigger": {}, "Indicator": {}, "Negotiation": {}}
         for label in _sorted_labels(sequence.labels):
-            if label.name not in VALID_LABELS:
+            if not _is_matching_label(label, sequence, filters):
                 continue
             excerpt = (label.excerpt or "").strip()
             if excerpt not in grouped[label.name]:
@@ -202,6 +235,7 @@ def dialogue_page(dialogue_id: str):
                 "wmn_id": sequence.wmn_id,
                 "context": sequence.context,
                 "wmn_type": sequence.wmn_type,
+                "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                 "wmn_meaning": sequence.wmn_meaning,
                 "triggers": grouped["Trigger"],
                 "indicators": grouped["Indicator"],
@@ -215,6 +249,7 @@ def dialogue_page(dialogue_id: str):
         dialogue_id=dialogue_id,
         corpus=corpus,
         sequence_summaries=sequence_summaries,
+        filters_active=_filters_are_active(filters),
     )
 
 
@@ -230,12 +265,17 @@ def sequence_page(dialogue_id: str, wmn_id: str):
 
     corpus = Corpus.query.filter_by(codename=sequence.corpus_codename).one_or_none()
 
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
     sibling_wmn_ids = [
-        row.wmn_id
+        {"wmn_id": row.wmn_id, "wmn_type_short": _wmn_type_short(row.wmn_type)}
         for row in AnnotationSequence.query.filter_by(dialogue_external_id=dialogue_id)
         .order_by(AnnotationSequence.wmn_id.asc())
         .all()
         if row.wmn_type in VALID_WMN_TYPES
+        and _is_matching_wmn(row, filters)
+        and _sequence_satisfies_label_filter(row, filters)
     ]
 
     dialogue = (
@@ -265,7 +305,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
             "excerpt": label.excerpt,
         }
         for label in _sorted_labels(sequence.labels)
-        if label.name in VALID_LABELS
+        if _is_matching_label(label, sequence, filters)
     ]
 
     truncation = _label_truncation_bounds(labels, len(utterances))
@@ -291,6 +331,7 @@ def sequence_page(dialogue_id: str, wmn_id: str):
         label_links=label_links,
         truncation=truncation,
         dialogue_missing=dialogue_missing,
+        filters_active=_filters_are_active(filters),
     )
 
 
@@ -307,27 +348,48 @@ def label_page(excerpt_hash: str):
         abort(404)
 
     first_label, _ = rows[0]
+
+    corpus_options = _corpus_options()
+    filters = _parse_detail_page_filters(corpus_options)
+
+    matching_rows = [
+        (label, sequence)
+        for label, sequence in rows
+        if _is_matching_wmn(sequence, filters)
+        and _sequence_satisfies_label_filter(sequence, filters)
+        and _is_matching_label(label, sequence, filters)
+    ]
+
     label_meta = {
         "label_name": first_label.name,
         "excerpt": (first_label.excerpt or "").casefold().strip(),
-        "count": len(rows),
+        "count": len(matching_rows),
         "dialogue_ids": set(),
         "sequence_ids": {},
     }
 
-    for label, sequence in rows:
+    for label, sequence in matching_rows:
         dialogue_id = sequence.dialogue_external_id
         label_meta["dialogue_ids"].add(dialogue_id)
 
         sequence_entry = label_meta["sequence_ids"].setdefault(
             sequence.wmn_id,
-            {"dialogue_id": dialogue_id, "wmn_count": 0},
+            {
+                "dialogue_id": dialogue_id,
+                "wmn_count": 0,
+                "wmn_type_short": _wmn_type_short(sequence.wmn_type),
+            },
         )
         sequence_entry["wmn_count"] += 1
 
     label_meta["dialogue_ids"] = sorted(label_meta["dialogue_ids"])
 
-    return render_template("label.html", site_title=SITE_TITLE, label=label_meta)
+    return render_template(
+        "label.html",
+        site_title=SITE_TITLE,
+        label=label_meta,
+        filters_active=_filters_are_active(filters),
+    )
 
 
 @bp.get("/about")
@@ -335,13 +397,13 @@ def about_page():
     return render_template("about.html", site_title=SITE_TITLE)
 
 
-def _parse_filters(args, corpus_options: list[dict]) -> dict:
+def _parse_filters(args, corpus_options: list[dict], apply_default_wmn_types: bool = True) -> dict:
     selected_wmn_names = {
         name
         for name, _ in WMN_TYPE_OPTIONS
-        if args.get(name) == name
+        if name in args
     }
-    if len(args) == 0:
+    if apply_default_wmn_types and len(args) == 0:
         selected_wmn_names = set(DEFAULT_WMN_NAMES)
 
     wmn_options = [
@@ -353,18 +415,43 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
         for name, value in WMN_TYPE_OPTIONS
     ]
 
-    label_name_key = args.get("label-name") or ""
-    context_key = args.get("context") or ""
+    valid_label_names = {name for name, _ in LABEL_OPTIONS}
+    selected_label_names = set(args.getlist("label-name")) & valid_label_names
+    label_options = [
+        {
+            "name": name,
+            "value": value,
+            "checked": name in selected_label_names,
+        }
+        for name, value in LABEL_OPTIONS
+    ]
+
+    valid_context_names = {name for name, _ in CONTEXT_OPTIONS}
+    selected_context_names = set(args.getlist("context")) & valid_context_names
+    context_options = [
+        {
+            "name": name,
+            "value": value,
+            "checked": name in selected_context_names,
+        }
+        for name, value in CONTEXT_OPTIONS
+    ]
 
     group_by = (args.get("group-by") or "SEQUENCE").upper()
     allowed_groups = {name for name, _ in GROUP_BY_OPTIONS}
     if group_by not in allowed_groups:
         group_by = "SEQUENCE"
 
-    corpus_value = args.get("corpus") or ""
     valid_corpora = {item["codename"] for item in corpus_options}
-    if corpus_value not in valid_corpora:
-        corpus_value = ""
+    selected_corpus_values = set(args.getlist("corpus")) & valid_corpora
+    corpus_filter_options = [
+        {
+            "codename": item["codename"],
+            "fullname": item["fullname"],
+            "checked": item["codename"] in selected_corpus_values,
+        }
+        for item in corpus_options
+    ]
 
     selected_csv_columns = [
         key
@@ -387,11 +474,12 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
     return {
         "search": (args.get("search") or "").strip(),
         "search_cf": (args.get("search") or "").strip().casefold(),
-        "label_name_key": label_name_key,
-        "label_name": LABEL_VALUE_BY_NAME.get(label_name_key),
-        "context_key": context_key,
-        "context": CONTEXT_VALUE_BY_NAME.get(context_key),
-        "corpus": corpus_value,
+        "label_names": {LABEL_VALUE_BY_NAME[name] for name in selected_label_names},
+        "label_options": label_options,
+        "context_values": {CONTEXT_VALUE_BY_NAME[name] for name in selected_context_names},
+        "context_options": context_options,
+        "corpus_values": selected_corpus_values,
+        "corpus_options": corpus_filter_options,
         "group_by": group_by,
         "compact": args.get("mode") == "compact",
         "wmn_options": wmn_options,
@@ -403,6 +491,27 @@ def _parse_filters(args, corpus_options: list[dict]) -> dict:
             if name in WMN_TYPE_BY_NAME
         },
     }
+
+
+def _parse_detail_page_filters(corpus_options: list[dict]) -> dict:
+    filters = _parse_filters(request.args, corpus_options, apply_default_wmn_types=False)
+    # Part of sequence (label type) and search don't carry over to detail pages -
+    # once a WMN sequence is shown, all of its labels are shown regardless of type
+    # or search match.
+    filters["label_names"] = set()
+    filters["search"] = ""
+    filters["search_cf"] = ""
+    return filters
+
+
+def _filters_are_active(filters: dict) -> bool:
+    return bool(
+        filters["search"]
+        or filters["label_names"]
+        or filters["context_values"]
+        or filters["corpus_values"]
+        or filters["selected_wmn_values"]
+    )
 
 
 def _corpus_options() -> list[dict]:
@@ -426,6 +535,9 @@ def _summaries_by_sequence(
     results = []
     for sequence in sequences:
         if not _is_matching_wmn(sequence, filters):
+            continue
+
+        if not _sequence_satisfies_label_filter(sequence, filters):
             continue
 
         triggers: dict[str, dict] = {}
@@ -483,6 +595,9 @@ def _summaries_by_dialogue(
         if not _is_matching_wmn(sequence, filters):
             continue
 
+        if not _sequence_satisfies_label_filter(sequence, filters):
+            continue
+
         matching_triggers: dict[str, int] = {}
         matching_indicators: dict[str, int] = {}
         matching_negotiations: list[dict[str, str]] = []
@@ -513,16 +628,14 @@ def _summaries_by_dialogue(
                 "dialogue_id": dialogue_id,
                 "corpus_fullname": corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename),
                 "context": sequence.context,
-                "sequence_ids": set(),
-                "wmn_types": set(),
+                "sequence_ids": {},
                 "wmn_meanings": set(),
                 "triggers": {},
                 "indicators": {},
                 "negotiations": [],
             }
 
-        results[dialogue_id]["sequence_ids"].add(sequence.wmn_id)
-        results[dialogue_id]["wmn_types"].add(sequence.wmn_type)
+        results[dialogue_id]["sequence_ids"][sequence.wmn_id] = sequence.wmn_type
         results[dialogue_id]["wmn_meanings"].add(sequence.wmn_meaning)
 
         for excerpt, count in matching_triggers.items():
@@ -546,12 +659,10 @@ def _summaries_by_dialogue(
         final.append(
             {
                 **summary,
-                "sequence_ids": sorted(summary["sequence_ids"]),
-                "wmn_types": sorted(summary["wmn_types"]),
-                "wmn_type_shorts": sorted(
-                    {_wmn_type_short(wmn_type) for wmn_type in summary["wmn_types"]},
-                    key=lambda short: (WMN_TYPE_ORDER.get(short, len(WMN_TYPE_ORDER)), short),
-                ),
+                "sequence_ids": {
+                    wmn_id: _wmn_type_short(wmn_type)
+                    for wmn_id, wmn_type in sorted(summary["sequence_ids"].items())
+                },
                 "wmn_meanings": sorted(summary["wmn_meanings"]),
             }
         )
@@ -572,6 +683,9 @@ def _summaries_by_label(
         if not _is_matching_wmn(sequence, filters):
             continue
 
+        if not _sequence_satisfies_label_filter(sequence, filters):
+            continue
+
         for label in _sorted_labels(sequence.labels):
             if not _is_matching_label(label, sequence, filters):
                 continue
@@ -588,11 +702,11 @@ def _summaries_by_label(
                         sequence.wmn_id: {
                             "dialogue_id": sequence.dialogue_external_id,
                             "wmn_count": 1,
+                            "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                         }
                     },
                     "corpora": {corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename)},
                     "contexts": {sequence.context},
-                    "wmn_types": {sequence.wmn_type},
                     "wmn_meanings": {sequence.wmn_meaning},
                 }
             else:
@@ -603,6 +717,7 @@ def _summaries_by_label(
                     {
                         "dialogue_id": sequence.dialogue_external_id,
                         "wmn_count": 0,
+                        "wmn_type_short": _wmn_type_short(sequence.wmn_type),
                     },
                 )
                 sequence_entry["wmn_count"] += 1
@@ -610,7 +725,6 @@ def _summaries_by_label(
                     corpus_by_codename.get(sequence.corpus_codename, sequence.corpus_codename)
                 )
                 results[excerpt]["contexts"].add(sequence.context)
-                results[excerpt]["wmn_types"].add(sequence.wmn_type)
                 results[excerpt]["wmn_meanings"].add(sequence.wmn_meaning)
 
     final = []
@@ -622,11 +736,6 @@ def _summaries_by_label(
                 "dialogue_ids": sorted(summary["dialogue_ids"]),
                 "corpora": sorted(summary["corpora"]),
                 "contexts": sorted(summary["contexts"]),
-                "wmn_types": sorted(summary["wmn_types"]),
-                "wmn_type_shorts": sorted(
-                    {_wmn_type_short(wmn_type) for wmn_type in summary["wmn_types"]},
-                    key=lambda short: (WMN_TYPE_ORDER.get(short, len(WMN_TYPE_ORDER)), short),
-                ),
                 "wmn_meanings": sorted(summary["wmn_meanings"]),
             }
         )
@@ -744,10 +853,10 @@ def _is_matching_wmn(sequence: AnnotationSequence, filters: dict) -> bool:
     if sequence.wmn_type not in VALID_WMN_TYPES:
         return False
 
-    if filters["corpus"] and sequence.corpus_codename != filters["corpus"]:
+    if filters["corpus_values"] and sequence.corpus_codename not in filters["corpus_values"]:
         return False
 
-    if filters["context"] and sequence.context != filters["context"]:
+    if filters["context_values"] and sequence.context not in filters["context_values"]:
         return False
 
     if filters["selected_wmn_values"] and sequence.wmn_type not in filters["selected_wmn_values"]:
@@ -756,23 +865,78 @@ def _is_matching_wmn(sequence: AnnotationSequence, filters: dict) -> bool:
     return True
 
 
+def _label_matches_search(label: AnnotationLabel, sequence: AnnotationSequence, search_cf: str) -> bool:
+    if not search_cf:
+        return True
+
+    return (
+        search_cf in (label.excerpt or "").casefold().strip()
+        or search_cf in (sequence.dialogue_external_id or "").casefold()
+        or search_cf in (sequence.wmn_id or "").casefold()
+    )
+
+
 def _is_matching_label(label: AnnotationLabel, sequence: AnnotationSequence, filters: dict) -> bool:
     if label.name not in VALID_LABELS:
         return False
 
-    if filters["label_name"] and label.name != filters["label_name"]:
+    if filters["label_names"] and label.name not in filters["label_names"]:
         return False
 
-    if filters["search_cf"]:
-        search = filters["search_cf"]
-        if (
-            search not in (label.excerpt or "").casefold().strip()
-            and search not in (sequence.dialogue_external_id or "").casefold()
-            and search not in (sequence.wmn_id or "").casefold()
-        ):
-            return False
+    return _label_matches_search(label, sequence, filters["search_cf"])
 
-    return True
+
+def _sequence_satisfies_label_filter(sequence: AnnotationSequence, filters: dict) -> bool:
+    present_types = {
+        label.name
+        for label in sequence.labels
+        if label.name in VALID_LABELS and _label_matches_search(label, sequence, filters["search_cf"])
+    }
+
+    if filters["label_names"]:
+        return filters["label_names"] <= present_types
+
+    return bool(present_types)
+
+
+def _sequence_is_result(sequence: AnnotationSequence, filters: dict) -> bool:
+    return _is_matching_wmn(sequence, filters) and _sequence_satisfies_label_filter(sequence, filters)
+
+
+def _count_for_option(
+    sequences: list[AnnotationSequence],
+    filters: dict,
+    dimension_key: str,
+    value: str,
+) -> int:
+    # Replace (not union with) this dimension's current selection, so an option's
+    # count never depends on sibling selections within its own filter group - only
+    # on the other groups' current state.
+    trial_filters = dict(filters)
+    trial_filters[dimension_key] = {value}
+    return sum(1 for sequence in sequences if _sequence_is_result(sequence, trial_filters))
+
+
+def _annotate_filter_option_counts(filters: dict, sequences: list[AnnotationSequence]) -> None:
+    for option in filters["wmn_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "selected_wmn_values", WMN_TYPE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["label_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "label_names", LABEL_VALUE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["context_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "context_values", CONTEXT_VALUE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["corpus_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "corpus_values", option["codename"]
+        )
 
 
 def _add_label_count(bucket: dict[str, dict], excerpt: str, excerpt_hash: str, count: int = 1) -> None:

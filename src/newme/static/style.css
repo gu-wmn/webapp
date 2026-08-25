@@ -161,6 +161,10 @@ a:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.wmn-type-grid {
+  row-gap: 0;
+}
+
 .align-end {
   align-items: end;
 }
@@ -185,6 +189,39 @@ a:focus-visible {
 .filter-reset-link:hover,
 .filter-reset-link:focus-visible {
   text-decoration: underline;
+}
+
+.filter-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.28rem 0.5rem 0.28rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.9rem;
+}
+
+.filter-banner-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.filter-banner-clear:hover,
+.filter-banner-clear:focus-visible {
+  background: #fff;
+  text-decoration: none;
 }
 
 .view-controls {
@@ -241,6 +278,14 @@ legend {
 .checkbox-row span {
   color: var(--ink);
   font-size: 0.92rem;
+}
+
+.checkbox-row .option-count {
+  margin-left: auto;
+  padding-left: 0.6rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .compact {
@@ -475,6 +520,18 @@ body.modal-open {
   font-weight: 600;
 }
 
+.wmn-type-badge {
+  display: inline-block;
+  background: #e9e2d7;
+  color: #4a433a;
+  border-radius: 4px;
+  padding: 0.02rem 0.32rem;
+  margin-left: 0.32rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
 .wmn-id.selected {
   border-color: #a78248;
   font-weight: 700;
@@ -553,7 +610,7 @@ a.diag-id:focus-visible {
 
 .search-hit {
   background: #ffef72;
-  color: inherit;
+  color: var(--ink);
   border-radius: 2px;
   padding: 0;
 }
