@@ -219,20 +219,23 @@
   function updateProgressEl(container, data) {
     const fill = container.querySelector(".progress-fill");
     const label = container.querySelector(".run-progress-label");
-    const eta = container.querySelector(".run-eta");
     const warning = container.querySelector(".run-connection-warning");
     const pct = data.total_count > 0
       ? Math.round(data.processed_count / data.total_count * 100)
       : 0;
     if (fill) fill.style.width = pct + "%";
     if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
-    if (eta) {
-      if (data.eta_seconds != null) {
-        const suffix = data.eta_source === "historical" ? " (from past runs)" : "";
-        eta.textContent = `~${formatEta(data.eta_seconds)} remaining${suffix}`;
-      } else {
-        eta.textContent = "";
-      }
+    // The server only recomputes eta_seconds when a dialogue finishes,
+    // which can be minutes between polls — displaying that raw value would
+    // sit frozen the whole time despite saying "remaining". Instead, stash
+    // it as a base + timestamp and let tickEtaDisplays() count it down
+    // locally every second; each poll just corrects that base.
+    if (data.eta_seconds != null) {
+      container._etaBaseSeconds = data.eta_seconds;
+      container._etaBaseTime = Date.now();
+      container._etaSource = data.eta_source;
+    } else {
+      container._etaBaseSeconds = null;
     }
     if (warning) {
       if (data.last_error) {
@@ -243,6 +246,22 @@
       }
     }
   }
+
+  function tickEtaDisplays() {
+    document.querySelectorAll(".run-progress").forEach(container => {
+      const eta = container.querySelector(".run-eta");
+      if (!eta) return;
+      if (container._etaBaseSeconds == null) {
+        eta.textContent = "";
+        return;
+      }
+      const elapsed = (Date.now() - container._etaBaseTime) / 1000;
+      const remaining = Math.max(0, container._etaBaseSeconds - elapsed);
+      const suffix = container._etaSource === "historical" ? " (from past runs)" : "";
+      eta.textContent = `~${formatEta(remaining)} remaining${suffix}`;
+    });
+  }
+  setInterval(tickEtaDisplays, 1000);
 
   function pollRun(runId) {
     pollTimer = setInterval(() => {
