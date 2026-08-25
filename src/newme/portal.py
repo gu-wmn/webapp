@@ -452,6 +452,18 @@ def _result_label_payload(result: RunResult, utterances: list[dict[str, str]]) -
     return labels
 
 
+def _canonical_wmn_type(items: list[dict[str, Any]]) -> str:
+    """The Indicator's wmn_type if present, else any item's — a WMN has one
+    type, but individual hits can disagree with each other (see
+    _group_label_links_by_wmn), so the Indicator's is taken as authoritative
+    since that's the one the model was actually asked to classify.
+    """
+    return next(
+        (item["wmn_type"] for item in items if item.get("name") == "Indicator" and item.get("wmn_type")),
+        next((item["wmn_type"] for item in items if item.get("wmn_type")), ""),
+    )
+
+
 def _group_label_links_by_wmn(label_links: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Group chip-row entries by wmn_group, preserving first-seen order.
 
@@ -487,10 +499,7 @@ def _group_label_links_by_wmn(label_links: list[dict[str, Any]]) -> list[dict[st
     grouped = []
     for group in order:
         links = groups[group]
-        canonical_type = next(
-            (link["wmn_type"] for link in links if link["name"] == "Indicator" and link.get("wmn_type")),
-            next((link["wmn_type"] for link in links if link.get("wmn_type")), ""),
-        )
+        canonical_type = _canonical_wmn_type(links)
         for link in links:
             link["wmn_type"] = canonical_type
         grouped.append({"group": group, "wmn_type": canonical_type, "links": links})
@@ -2100,9 +2109,14 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         ]
     else:
         group_llm_labels = llm_labels
+    # Only show a side's dialogue text when that side actually has something
+    # selected — a human-only tab has no model group to highlight, and a
+    # model-only tab has no human sequence, so there's nothing meaningful to
+    # show there. The legacy (pre-wmn_group) fallback is the exception: with
+    # no group info to pair on at all, every hit is shown regardless of tab.
     llm_utterances: list[dict[str, str]] = []
     llm_label_links: list[dict[str, str]] = []
-    if utterances:
+    if utterances and (not group_order or selected_group is not None):
         llm_utterances, llm_label_links = _annotate_dialogue_utterances(
             utterances,
             group_llm_labels,
@@ -2112,13 +2126,38 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
 
     human_utterances: list[dict[str, str]] = []
     human_label_links: list[dict[str, str]] = []
-    if utterances:
-        human_labels = _sequence_label_payload(selected_sequence) if selected_sequence else []
+    if utterances and selected_sequence is not None:
+        human_labels = _sequence_label_payload(selected_sequence)
         human_utterances, human_label_links = _annotate_dialogue_utterances(
             utterances,
             human_labels,
             anchor_prefix="human-label",
         )
+
+    # "Compare with" cards: when a tab has nothing on one side, that side
+    # shows cards for the other side's non-matching WMNs instead of an empty
+    # dialogue column — a quick way to see what the model/human found
+    # elsewhere in this dialogue that didn't pair with anything.
+    model_only_cards = [
+        {
+            "tab": tab,
+            "wmn_type": _canonical_wmn_type(
+                [label for label in llm_labels if label.get("wmn_group") == tab["group"]]
+            ),
+            "labels": [label for label in llm_labels if label.get("wmn_group") == tab["group"]],
+        }
+        for tab in tabs
+        if tab["kind"] == "model-only"
+    ]
+    human_only_cards = [
+        {
+            "tab": tab,
+            "wmn_type": sequence_by_id[tab["wmn_id"]].wmn_type,
+            "labels": _sequence_label_payload(sequence_by_id[tab["wmn_id"]]),
+        }
+        for tab in tabs
+        if tab["kind"] == "human-only"
+    ]
 
     return render_template(
         "portal/result_dialogue.html",
@@ -2140,6 +2179,8 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         selected_sequence=selected_sequence,
         human_utterances=human_utterances,
         human_label_links=human_label_links,
+        model_only_cards=model_only_cards,
+        human_only_cards=human_only_cards,
     )
 
 

@@ -96,7 +96,23 @@
         </div>
         {% endfor %}
         {% elif selected_tab and selected_tab.kind == 'human-only' %}
-        <p class="portal-empty">No matching model WMN.</p>
+          {% if model_only_cards %}
+          <p class="wmn-compare-heading">Compare with</p>
+          <div class="wmn-compare-cards">
+            {% for card in model_only_cards %}
+            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=card.tab.group, wmn_id=card.tab.wmn_id) }}">
+              <p class="wmn-compare-card-heading">{{ card.tab.label }}{% if card.wmn_type %} <span class="chip-wmn-type">({{ card.wmn_type }})</span>{% endif %}</p>
+              <div class="label-chip-row">
+                {% for label in card.labels %}
+                <span class="tag {{ label.name }}">{{ label.name }}: {{ label.quote[:30] }}{% if label.quote|length > 30 %}...{% endif %}</span>
+                {% endfor %}
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="portal-empty">No matching model WMN.</p>
+          {% endif %}
         {% endif %}
       </div>
 
@@ -138,7 +154,23 @@
         {% elif not human_sequences %}
         <p class="portal-empty">No human annotations found for this dialogue.</p>
         {% elif selected_tab and selected_tab.kind == 'model-only' %}
-        <p class="portal-empty">No matching human annotation.</p>
+          {% if human_only_cards %}
+          <p class="wmn-compare-heading">Compare with</p>
+          <div class="wmn-compare-cards">
+            {% for card in human_only_cards %}
+            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=card.tab.group, wmn_id=card.tab.wmn_id) }}">
+              <p class="wmn-compare-card-heading">{{ card.tab.label }}{% if card.wmn_type %} <span class="chip-wmn-type">({{ card.wmn_type }})</span>{% endif %}</p>
+              <div class="label-chip-row">
+                {% for label in card.labels %}
+                <span class="tag {{ label.name }}">{{ label.name }}: {{ label.quote[:30] }}{% if label.quote|length > 30 %}...{% endif %}</span>
+                {% endfor %}
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="portal-empty">No matching human annotation.</p>
+          {% endif %}
         {% endif %}
       </div>
 

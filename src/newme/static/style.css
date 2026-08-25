@@ -1844,6 +1844,47 @@ textarea[readonly]:focus {
   margin: 0.6rem 0 0;
 }
 
+.wmn-compare-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0.6rem 0 0.5rem;
+}
+
+.wmn-compare-cards {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.wmn-compare-card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 0.6rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wmn-compare-card:hover,
+.wmn-compare-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--shadow);
+  text-decoration: none;
+}
+
+.wmn-compare-card-heading {
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.wmn-compare-card .label-chip-row {
+  margin: 0;
+}
+
 .chip-wmn-type {
   font-size: 0.78em;
   opacity: 0.75;
