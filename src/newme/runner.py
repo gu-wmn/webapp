@@ -904,6 +904,16 @@ def _run_worker(run_id: int, app) -> None:
                 # of it anyway. One at a time means an abort only ever has to
                 # wait out the single dialogue Ollama happens to be working
                 # on right now, not dozens.
+                initial_run_estimate_seconds, initial_run_estimate_source = estimate_run_eta_seconds(run, prompt)
+                if initial_run_estimate_seconds is not None:
+                    print(
+                        f"run {run.id}: initial estimate for the whole run: "
+                        f"{initial_run_estimate_seconds:.1f}s via {initial_run_estimate_source} "
+                        f"(logged here so it can be compared against the actual total once "
+                        f"this run finishes)",
+                        flush=True,
+                    )
+
                 for exp_dialogue in dialogues:
                     db.session.refresh(run)
                     if run.status not in ("pending", "running"):
@@ -913,6 +923,8 @@ def _run_worker(run_id: int, app) -> None:
                     raw_response = None
                     error_msg = None
                     char_count = None
+                    estimated_seconds = None
+                    estimate_source = None
                     started = time.monotonic()
 
                     try:
@@ -981,6 +993,12 @@ def _run_worker(run_id: int, app) -> None:
                         run.current_dialogue_char_count = char_count
                         db.session.commit()
 
+                        # Logged now (before dispatch) and again once the
+                        # actual duration is known below, purely so the
+                        # estimate's accuracy can be checked against reality
+                        # by reading the logs — this isn't shown in the UI.
+                        estimated_seconds, estimate_source = estimate_current_dialogue_eta_seconds(run, prompt)
+
                         # print(flush=True), not app.logger: Flask's default
                         # logger filters INFO below its effective level
                         # unless something has explicitly configured it,
@@ -990,7 +1008,9 @@ def _run_worker(run_id: int, app) -> None:
                         print(
                             f"run {run.id}: dispatching dialogue "
                             f"{exp_dialogue.dialogue_external_id} "
-                            f"(num_ctx={chat_kwargs['options']['num_ctx']})",
+                            f"(num_ctx={chat_kwargs['options']['num_ctx']}, "
+                            f"chars={char_count}, "
+                            f"estimated={'%.1fs via %s' % (estimated_seconds, estimate_source) if estimated_seconds is not None else 'n/a'})",
                             flush=True,
                         )
                         raw_response = _chat_with_retry(client, chat_kwargs)
@@ -1040,11 +1060,16 @@ def _run_worker(run_id: int, app) -> None:
                     run.processed_count += 1
                     run.last_progress_at = datetime.now(timezone.utc)
                     db.session.commit()
+                    estimate_note = (
+                        f", estimated {estimated_seconds:.1f}s via {estimate_source} "
+                        f"(off by {duration - estimated_seconds:+.1f}s)"
+                        if estimated_seconds is not None else ""
+                    )
                     print(
                         f"run {run.id}: recorded dialogue "
                         f"{exp_dialogue.dialogue_external_id} "
                         f"({run.processed_count}/{run.total_count} done, "
-                        f"took {duration:.1f}s)"
+                        f"took {duration:.1f}s{estimate_note})"
                         + (f" — error: {error_msg}" if error_msg else ""),
                         flush=True,
                     )
@@ -1052,6 +1077,16 @@ def _run_worker(run_id: int, app) -> None:
             run.status = "complete"
             run.completed_at = datetime.now(timezone.utc)
             run.last_error = None
+
+            if not is_regex and initial_run_estimate_seconds is not None:
+                actual_seconds = (run.completed_at - run.started_at).total_seconds()
+                print(
+                    f"run {run.id}: finished — actual total {actual_seconds:.1f}s vs. "
+                    f"initial estimate {initial_run_estimate_seconds:.1f}s via "
+                    f"{initial_run_estimate_source} "
+                    f"(off by {actual_seconds - initial_run_estimate_seconds:+.1f}s)",
+                    flush=True,
+                )
             db.session.commit()
 
         except Exception as exc:
