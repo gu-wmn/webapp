@@ -45,6 +45,28 @@ from .models.experiment import (
 
 bp = Blueprint("portal", __name__)
 
+
+@bp.app_template_filter("duration")
+def format_duration(seconds: float | None) -> str:
+    """Render a second count as the two most significant non-zero units
+    (d/h/m/s), dropping seconds once hours are shown — mirrors the ETA
+    formatting used for in-progress runs.
+    """
+    if seconds is None:
+        return ""
+    total = max(0, round(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
 _VALID_WMN_VALUES = {v for v, _ in VALID_WMN_TYPES}
 _VALID_LABEL_NAMES = {"Trigger", "Indicator", "Negotiation"}
 _RESULT_WMN_MEANINGS = {"both"}
@@ -1449,7 +1471,7 @@ def _renumber_prompts(experiment_id: int) -> None:
 def start_run(experiment_id: int, prompt_id: int):
     from flask import current_app
 
-    from .runner import execute_run
+    from .runner import compute_experiment_char_count, execute_run
 
     user = session["user"]
     exp = Experiment.query.filter_by(id=experiment_id, user_email=user).first_or_404()
@@ -1469,6 +1491,7 @@ def start_run(experiment_id: int, prompt_id: int):
         experiment_id=exp.id,
         prompt_id=prompt.id,
         total_count=len(exp.dialogues),
+        total_char_count=compute_experiment_char_count(exp),
     )
     db.session.add(run)
     db.session.commit()
@@ -1487,6 +1510,14 @@ def run_status(run_id: int):
         id=run.experiment_id, user_email=session["user"]
     ).first_or_404()
 
+    eta_seconds = None
+    eta_source = None
+    if run.status in ("pending", "running"):
+        from .runner import estimate_run_eta_seconds
+
+        prompt = db.session.get(Prompt, run.prompt_id)
+        eta_seconds, eta_source = estimate_run_eta_seconds(run, prompt)
+
     return jsonify({
         "run_id": run.id,
         "status": run.status,
@@ -1494,6 +1525,8 @@ def run_status(run_id: int):
         "total_count": run.total_count,
         "error_message": run.error_message,
         "last_error": run.last_error if run.status in ("pending", "running") else None,
+        "eta_seconds": eta_seconds,
+        "eta_source": eta_source,
     })
 
 

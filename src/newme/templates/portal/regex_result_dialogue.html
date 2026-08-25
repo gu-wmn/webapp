@@ -17,7 +17,7 @@
     <p><b>Dialogue length:</b> {{ result.dialogue_char_count }} characters</p>
     {% endif %}
     {% if result.duration_seconds is not none %}
-    <p><b>Processing time:</b> {{ "%.1f"|format(result.duration_seconds) }}s</p>
+    <p><b>Processing time:</b> {{ result.duration_seconds | duration }}</p>
     {% endif %}
   </div>
 

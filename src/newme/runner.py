@@ -615,6 +615,98 @@ def _chat_with_retry(client, chat_kwargs: dict, retries: int = 1, backoff_second
             time.sleep(backoff_seconds)
 
 
+def compute_experiment_char_count(experiment) -> int:
+    """Total character count across every dialogue in the experiment's sample.
+
+    Computed once when a run starts, so there's a fixed total to weigh
+    completed-so-far characters against for an ETA — including before any
+    dialogue in the run has actually finished.
+    """
+    from .extensions import db
+    from .models import Corpus, Dialogue, Utterance
+    from .models.experiment import ExperimentDialogue
+
+    dialogues = ExperimentDialogue.query.filter_by(experiment_id=experiment.id).all()
+    total = 0
+    for exp_dialogue in dialogues:
+        dialogue_obj = (
+            db.session.query(Dialogue)
+            .join(Corpus, Dialogue.corpus_id == Corpus.id)
+            .filter(
+                Corpus.codename == exp_dialogue.corpus_codename,
+                Dialogue.external_id == exp_dialogue.dialogue_external_id,
+            )
+            .first()
+        )
+        if dialogue_obj is None:
+            continue
+        char_count = (
+            db.session.query(db.func.sum(db.func.length(Utterance.text)))
+            .filter(Utterance.dialogue_id == dialogue_obj.id)
+            .scalar()
+        )
+        total += char_count or 0
+    return total
+
+
+def estimate_run_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
+    """Rough ETA, in seconds, for the dialogues still left in a run.
+
+    Prefers a seconds-per-character rate derived from dialogues already
+    completed in this run, since that reflects whatever's actually
+    happening on the host right now (host load, model, current context
+    sizing). Falls back to this model's rate from past runs so there's
+    still something to show before the first dialogue in this run
+    finishes. Returns (seconds, source), where source is "current_run",
+    "historical", or None if neither has enough data yet.
+    """
+    from .extensions import db
+    from .models.experiment import Prompt, Run, RunResult
+
+    current_seconds, current_chars = (
+        db.session.query(
+            db.func.sum(RunResult.duration_seconds),
+            db.func.sum(RunResult.dialogue_char_count),
+        )
+        .filter(
+            RunResult.run_id == run.id,
+            RunResult.duration_seconds.isnot(None),
+            RunResult.dialogue_char_count > 0,
+        )
+        .first()
+    )
+    current_chars = current_chars or 0
+
+    if current_chars:
+        rate = current_seconds / current_chars
+        source = "current_run"
+    else:
+        hist_seconds, hist_chars = (
+            db.session.query(
+                db.func.sum(RunResult.duration_seconds),
+                db.func.sum(RunResult.dialogue_char_count),
+            )
+            .join(Run, RunResult.run_id == Run.id)
+            .join(Prompt, Run.prompt_id == Prompt.id)
+            .filter(
+                Prompt.model == prompt.model,
+                RunResult.duration_seconds.isnot(None),
+                RunResult.dialogue_char_count > 0,
+            )
+            .first()
+        )
+        if not hist_chars:
+            return None, None
+        rate = hist_seconds / hist_chars
+        source = "historical"
+
+    if run.total_char_count is None:
+        return None, None
+
+    remaining_chars = max(run.total_char_count - current_chars, 0)
+    return rate * remaining_chars, source
+
+
 def _run_worker(run_id: int, app) -> None:
     with app.app_context():
         from .extensions import db

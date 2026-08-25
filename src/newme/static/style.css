@@ -1599,7 +1599,8 @@ textarea[readonly]:focus {
   transition: width 0.4s ease;
 }
 
-.run-progress-label {
+.run-progress-label,
+.run-eta {
   font-size: 0.78rem;
   color: var(--muted);
   white-space: nowrap;

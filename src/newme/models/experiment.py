@@ -431,6 +431,7 @@ class Run(db.Model):
     status = db.Column(db.String, nullable=False, default="pending")
     total_count = db.Column(db.Integer, nullable=False, default=0)
     processed_count = db.Column(db.Integer, nullable=False, default=0)
+    total_char_count = db.Column(db.Integer, nullable=True)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
     error_message = db.Column(db.Text, nullable=True)

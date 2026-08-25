@@ -139,6 +139,7 @@
               <span class="run-progress-label">
                 {{ latest_run.processed_count }} / {{ latest_run.total_count }}
               </span>
+              <span class="run-eta"></span>
               <button class="abort-run-btn" data-abort-url="{{ url_for('portal.abort_run', run_id=latest_run.id) }}">Abort</button>
               <div class="run-connection-warning" {% if not latest_run.last_error %}style="display:none"{% endif %}>{{ latest_run.last_error }}</div>
             </div>
@@ -203,15 +204,36 @@
 
   const TERMINAL_STATUSES = ["complete", "error", "aborted"];
 
+  function formatEta(seconds) {
+    seconds = Math.max(0, Math.round(seconds));
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
   function updateProgressEl(container, data) {
     const fill = container.querySelector(".progress-fill");
     const label = container.querySelector(".run-progress-label");
+    const eta = container.querySelector(".run-eta");
     const warning = container.querySelector(".run-connection-warning");
     const pct = data.total_count > 0
       ? Math.round(data.processed_count / data.total_count * 100)
       : 0;
     if (fill) fill.style.width = pct + "%";
     if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
+    if (eta) {
+      if (data.eta_seconds != null) {
+        const suffix = data.eta_source === "historical" ? " (from past runs)" : "";
+        eta.textContent = `~${formatEta(data.eta_seconds)} remaining${suffix}`;
+      } else {
+        eta.textContent = "";
+      }
+    }
     if (warning) {
       if (data.last_error) {
         warning.textContent = data.last_error;
@@ -319,6 +341,7 @@
       <span class="run-status-badge run-running">Running</span>
       <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
       <span class="run-progress-label">0 / ${totalCount}</span>
+      <span class="run-eta"></span>
       <button class="abort-run-btn" data-abort-url="${abortUrlBase}${runId}/abort">Abort</button>
       <div class="run-connection-warning" style="display:none"></div>
     `;

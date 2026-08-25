@@ -95,7 +95,7 @@
         <span class="result-stat">
           {%- if result.dialogue_char_count is not none %}{{ result.dialogue_char_count }} chars{% endif -%}
           {%- if result.dialogue_char_count is not none and result.duration_seconds is not none %} &middot; {% endif -%}
-          {%- if result.duration_seconds is not none %}{{ "%.1f"|format(result.duration_seconds) }}s{% endif -%}
+          {%- if result.duration_seconds is not none %}{{ result.duration_seconds | duration }}{% endif -%}
         </span>
         {% endif %}
       </div>
