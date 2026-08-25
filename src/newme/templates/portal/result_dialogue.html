@@ -80,6 +80,9 @@
         {% endif %}
 
         {% if llm_label_links %}
+        {% if comparing_llm %}
+        <a class="wmn-compare-cancel" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=selected_tab.group, wmn_id=selected_tab.wmn_id) }}">&times; Stop comparing</a>
+        {% endif %}
         {% for grp in llm_label_groups %}
         <div class="wmn-group-block">
           {% if grp.group is not none %}
@@ -100,7 +103,7 @@
           <p class="wmn-compare-heading">Compare with</p>
           <div class="wmn-compare-cards">
             {% for card in model_only_cards %}
-            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=card.tab.group, wmn_id=card.tab.wmn_id) }}">
+            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=selected_tab.group, wmn_id=selected_tab.wmn_id, compare_group=card.tab.group) }}">
               <p class="wmn-compare-card-heading">{{ card.tab.label }}{% if card.wmn_type %} <span class="chip-wmn-type">({{ card.wmn_type }})</span>{% endif %}</p>
               <div class="label-chip-row">
                 {% for label in card.labels %}
@@ -135,6 +138,9 @@
         </div>
 
         {% if selected_sequence %}
+        {% if comparing_human %}
+        <a class="wmn-compare-cancel" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=selected_tab.group, wmn_id=selected_tab.wmn_id) }}">&times; Stop comparing</a>
+        {% endif %}
         <div class="meta-block">
           <p><b>WMN ID:</b> {{ selected_sequence.wmn_id }}</p>
           <p><b>Type:</b> {{ selected_sequence.wmn_type }}</p>
@@ -158,7 +164,7 @@
           <p class="wmn-compare-heading">Compare with</p>
           <div class="wmn-compare-cards">
             {% for card in human_only_cards %}
-            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=card.tab.group, wmn_id=card.tab.wmn_id) }}">
+            <a class="wmn-compare-card" href="{{ url_for('portal.run_result_dialogue', experiment_id=experiment.id, prompt_id=prompt.id, result_id=result.id, group=selected_tab.group, wmn_id=selected_tab.wmn_id, compare_wmn_id=card.tab.wmn_id) }}">
               <p class="wmn-compare-card-heading">{{ card.tab.label }}{% if card.wmn_type %} <span class="chip-wmn-type">({{ card.wmn_type }})</span>{% endif %}</p>
               <div class="label-chip-row">
                 {% for label in card.labels %}

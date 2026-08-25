@@ -2132,24 +2132,57 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
     selected_group = selected_tab["group"] if selected_tab else None
     selected_sequence = sequence_by_id.get(selected_tab["wmn_id"]) if selected_tab else None
 
+    # The anchor tab (from the tab bar) never moves once picked — its own
+    # side always keeps showing its own dialogue. Only the empty side (the
+    # one that fell back to "Compare with" cards) is customizable: picking a
+    # card there adds a compare_group/compare_wmn_id param that swaps in
+    # that WMN's dialogue for JUST that side, without disturbing the anchor.
+    req_compare_group_raw = (request.args.get("compare_group") or "").strip()
+    try:
+        req_compare_group: Any = int(req_compare_group_raw) if req_compare_group_raw else None
+    except ValueError:
+        req_compare_group = None
+    req_compare_wmn_id = (request.args.get("compare_wmn_id") or "").strip() or None
+
+    effective_group = selected_group
+    effective_sequence = selected_sequence
+    comparing_llm = False
+    comparing_human = False
+
+    if selected_tab and selected_tab["kind"] == "human-only" and req_compare_group is not None:
+        compare_tab = next(
+            (t for t in tabs if t["kind"] == "model-only" and t["group"] == req_compare_group),
+            None,
+        )
+        if compare_tab is not None:
+            effective_group = compare_tab["group"]
+            comparing_llm = True
+
+    if selected_tab and selected_tab["kind"] == "model-only" and req_compare_wmn_id is not None:
+        compare_sequence = sequence_by_id.get(req_compare_wmn_id)
+        if compare_sequence is not None and compare_sequence.wmn_id not in sequence_to_group:
+            effective_sequence = compare_sequence
+            comparing_human = True
+
     # Older results (pre-wmn_group, e.g. the retired "simplified" output format)
     # carry no group info to pair on — fall back to showing every hit
     # regardless of the selected tab, matching how they rendered before tabs.
     if group_order:
         group_llm_labels = [
             label for label in llm_labels
-            if selected_group is not None and label.get("wmn_group") == selected_group
+            if effective_group is not None and label.get("wmn_group") == effective_group
         ]
     else:
         group_llm_labels = llm_labels
     # Only show a side's dialogue text when that side actually has something
     # selected — a human-only tab has no model group to highlight, and a
     # model-only tab has no human sequence, so there's nothing meaningful to
-    # show there. The legacy (pre-wmn_group) fallback is the exception: with
-    # no group info to pair on at all, every hit is shown regardless of tab.
+    # show there, unless a "Compare with" card filled it in. The legacy
+    # (pre-wmn_group) fallback is the exception: with no group info to pair
+    # on at all, every hit is shown regardless of tab.
     llm_utterances: list[dict[str, str]] = []
     llm_label_links: list[dict[str, str]] = []
-    if utterances and (not group_order or selected_group is not None):
+    if utterances and (not group_order or effective_group is not None):
         llm_utterances, llm_label_links = _annotate_dialogue_utterances(
             utterances,
             group_llm_labels,
@@ -2159,8 +2192,8 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
 
     human_utterances: list[dict[str, str]] = []
     human_label_links: list[dict[str, str]] = []
-    if utterances and selected_sequence is not None:
-        human_labels = _sequence_label_payload(selected_sequence)
+    if utterances and effective_sequence is not None:
+        human_labels = _sequence_label_payload(effective_sequence)
         human_utterances, human_label_links = _annotate_dialogue_utterances(
             utterances,
             human_labels,
@@ -2209,7 +2242,9 @@ def run_result_dialogue(experiment_id: int, prompt_id: int, result_id: int):
         human_sequences=human_sequences,
         tabs=tabs,
         selected_tab=selected_tab,
-        selected_sequence=selected_sequence,
+        selected_sequence=effective_sequence,
+        comparing_llm=comparing_llm,
+        comparing_human=comparing_human,
         human_utterances=human_utterances,
         human_label_links=human_label_links,
         model_only_cards=model_only_cards,

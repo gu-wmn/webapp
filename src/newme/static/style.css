@@ -1886,6 +1886,23 @@ textarea[readonly]:focus {
   margin: 0;
 }
 
+.wmn-compare-cancel {
+  display: inline-block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+.wmn-compare-cancel:hover,
+.wmn-compare-cancel:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .chip-wmn-type {
   font-size: 0.78em;
   opacity: 0.75;
