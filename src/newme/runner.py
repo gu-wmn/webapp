@@ -165,18 +165,24 @@ _SAFETY_MARGIN_MULTIPLIER = 1.42
 DEFAULT_TEMPERATURE = 0.1
 
 
-def _adaptive_num_ctx(prompt_text: str) -> int:
-    """Size the context window to the assembled prompt rather than trusting
-    whatever a model's own default happens to be — Ollama's defaults (often
-    2048-4096) silently truncate long dialogues instead of erroring, which
-    would quietly corrupt results. Only used when a prompt doesn't set its own
-    num_ctx override.
+def _adaptive_num_ctx(prompt_length: int) -> int:
+    """Size the context window to an assembled prompt's length rather than
+    trusting whatever a model's own default happens to be — Ollama's
+    defaults (often 2048-4096) silently truncate long dialogues instead of
+    erroring, which would quietly corrupt results. Only used when a prompt
+    doesn't set its own num_ctx override.
+
+    Takes a length, not the prompt text itself: llama.cpp fixes num_ctx at
+    model-load time, so a value that varies per request forces Ollama to
+    reload the entire model before serving each one — callers must compute
+    this once per run (from the largest dialogue in it) and reuse it for
+    every dialogue, never call it per-dialogue.
 
     The padded total is rounded up to the next power of two, matching how
     context windows are conventionally sized. No upper bound — only a floor
     for degenerate (near-empty) prompts.
     """
-    input_tokens = -int(-len(prompt_text) // _CHARS_PER_TOKEN)  # ceil division
+    input_tokens = -int(-prompt_length // _CHARS_PER_TOKEN)  # ceil division
     output_reserve = min(
         _OUTPUT_TOKEN_RESERVE_CAP,
         max(_OUTPUT_TOKEN_RESERVE_FLOOR, int(input_tokens * _OUTPUT_TOKEN_RESERVE_FRACTION)),
@@ -710,7 +716,22 @@ def _run_worker(run_id: int, app) -> None:
                 # concurrent execution — anything beyond that just queues
                 # server-side, so there's no need to cap dispatch to match it
                 # from this end.
+                # Ollama (via llama.cpp) allocates the KV cache when a model
+                # is loaded, sized to whatever num_ctx that load request
+                # asked for — it's fixed for the life of that loaded
+                # instance, not a per-request setting. A different num_ctx on
+                # the next request forces Ollama to unload and reload the
+                # entire model before it can serve it. Computing num_ctx per
+                # dialogue (as this used to) meant nearly every dialogue in a
+                # run asked for a different size than the last, so the model
+                # reloaded dozens of times over a single run — serializing
+                # everything regardless of dispatch concurrency, and (reloads
+                # being heavy, failure-prone operations) very likely the
+                # actual cause of dialogues coming back empty. So: size once
+                # per run, from the largest dialogue in it, and reuse that
+                # for every job — the model loads once and stays loaded.
                 jobs: list[dict[str, Any]] = []
+                max_prompt_len = 0
                 for exp_dialogue in dialogues:
                     db.session.refresh(run)
                     if run.status not in ("pending", "running"):
@@ -757,26 +778,10 @@ def _run_worker(run_id: int, app) -> None:
                             regex_candidates,
                         )
 
-                        chat_kwargs: dict = {
-                            "model": prompt.model,
-                            "messages": [{"role": "user", "content": prompt_text}],
-                            "options": {
-                                "num_ctx": (
-                                    prompt.num_ctx if prompt.num_ctx is not None
-                                    else _adaptive_num_ctx(prompt_text)
-                                ),
-                                "temperature": (
-                                    prompt.temperature if prompt.temperature is not None
-                                    else DEFAULT_TEMPERATURE
-                                ),
-                            },
-                        }
-                        if schema:
-                            chat_kwargs["format"] = schema
-
+                        max_prompt_len = max(max_prompt_len, len(prompt_text))
                         jobs.append({
                             "exp_dialogue": exp_dialogue,
-                            "chat_kwargs": chat_kwargs,
+                            "prompt_text": prompt_text,
                             "char_count": char_count,
                         })
                     except Exception as exc:
@@ -798,6 +803,27 @@ def _run_worker(run_id: int, app) -> None:
                         db.session.commit()
 
                 if jobs:
+                    run_num_ctx = (
+                        prompt.num_ctx if prompt.num_ctx is not None
+                        else _adaptive_num_ctx(max_prompt_len)
+                    )
+                    for job in jobs:
+                        chat_kwargs: dict = {
+                            "model": prompt.model,
+                            "messages": [{"role": "user", "content": job["prompt_text"]}],
+                            "options": {
+                                "num_ctx": run_num_ctx,
+                                "temperature": (
+                                    prompt.temperature if prompt.temperature is not None
+                                    else DEFAULT_TEMPERATURE
+                                ),
+                            },
+                        }
+                        if schema:
+                            chat_kwargs["format"] = schema
+                        job["chat_kwargs"] = chat_kwargs
+                        del job["prompt_text"]
+
                     with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
                         future_to_job = {}
                         for job in jobs:

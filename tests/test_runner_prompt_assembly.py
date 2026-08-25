@@ -172,13 +172,13 @@ class AdaptiveNumCtxTests(unittest.TestCase):
         # alone (2048 tokens), which rounds up to the next power of two.
         from newme.runner import _adaptive_num_ctx
 
-        self.assertEqual(_adaptive_num_ctx("short prompt"), 4096)
+        self.assertEqual(_adaptive_num_ctx(len("short prompt")), 4096)
 
     def test_result_is_always_a_power_of_two(self) -> None:
         from newme.runner import _adaptive_num_ctx
 
         for length in (100, 5_000, 20_000, 100_000):
-            num_ctx = _adaptive_num_ctx("x" * length)
+            num_ctx = _adaptive_num_ctx(length)
             self.assertEqual(num_ctx & (num_ctx - 1), 0, f"{num_ctx} for length {length}")
 
     def test_result_covers_input_plus_output_reserve_with_safety_margin(self) -> None:
@@ -191,9 +191,9 @@ class AdaptiveNumCtxTests(unittest.TestCase):
             _SAFETY_MARGIN_MULTIPLIER,
         )
 
-        text = "x" * 40_000
-        num_ctx = _adaptive_num_ctx(text)
-        input_tokens = len(text) / _CHARS_PER_TOKEN
+        length = 40_000
+        num_ctx = _adaptive_num_ctx(length)
+        input_tokens = length / _CHARS_PER_TOKEN
         reserve = min(
             _OUTPUT_TOKEN_RESERVE_CAP,
             max(_OUTPUT_TOKEN_RESERVE_FLOOR, int(input_tokens * _OUTPUT_TOKEN_RESERVE_FRACTION)),
@@ -210,8 +210,7 @@ class AdaptiveNumCtxTests(unittest.TestCase):
 
         min_headroom_ratio = float("inf")
         for length in range(1_000, 200_000, 2_777):  # odd step to sample mid-tier points, not just edges
-            text = "x" * length
-            num_ctx = _adaptive_num_ctx(text)
+            num_ctx = _adaptive_num_ctx(length)
             input_tokens = length / _CHARS_PER_TOKEN
             min_headroom_ratio = min(min_headroom_ratio, num_ctx / input_tokens)
 
@@ -225,18 +224,18 @@ class AdaptiveNumCtxTests(unittest.TestCase):
         # window rather than being clamped.
         from newme.runner import _adaptive_num_ctx
 
-        self.assertLess(_adaptive_num_ctx("x" * 2_000_000), _adaptive_num_ctx("x" * 20_000_000))
-        self.assertGreater(_adaptive_num_ctx("x" * 20_000_000), 262_144)
+        self.assertLess(_adaptive_num_ctx(2_000_000), _adaptive_num_ctx(20_000_000))
+        self.assertGreater(_adaptive_num_ctx(20_000_000), 262_144)
 
     def test_output_reserve_scales_with_input_up_to_the_cap(self) -> None:
         from newme.runner import _adaptive_num_ctx, _OUTPUT_TOKEN_RESERVE_FLOOR
 
         # A huge input's reserve should exceed the flat floor (scaling kicked
         # in) — detectable via num_ctx landing higher than input-alone would need.
-        huge_text = "x" * 400_000
-        num_ctx = _adaptive_num_ctx(huge_text)
+        huge_length = 400_000
+        num_ctx = _adaptive_num_ctx(huge_length)
         input_tokens_only_ctx = 1
-        while input_tokens_only_ctx < len(huge_text) / 3.5 + _OUTPUT_TOKEN_RESERVE_FLOOR:
+        while input_tokens_only_ctx < huge_length / 3.5 + _OUTPUT_TOKEN_RESERVE_FLOOR:
             input_tokens_only_ctx *= 2
 
         self.assertGreaterEqual(num_ctx, input_tokens_only_ctx)
@@ -244,7 +243,7 @@ class AdaptiveNumCtxTests(unittest.TestCase):
     def test_longer_prompt_never_yields_a_smaller_window(self) -> None:
         from newme.runner import _adaptive_num_ctx
 
-        self.assertLessEqual(_adaptive_num_ctx("x" * 1_000), _adaptive_num_ctx("x" * 50_000))
+        self.assertLessEqual(_adaptive_num_ctx(1_000), _adaptive_num_ctx(50_000))
 
 
 if __name__ == "__main__":
