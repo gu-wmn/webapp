@@ -4,7 +4,7 @@ import json
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 # Maps an in-progress LLM run to the Ollama client it's currently using, so an
@@ -707,6 +707,38 @@ def estimate_run_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
     return rate * remaining_chars, source
 
 
+def estimate_run_eta(run, prompt) -> tuple[datetime | None, str | None]:
+    """Absolute estimated completion time for a run, in place of a bare
+    "N seconds remaining".
+
+    A duration handed to the client would have to be turned back into a
+    countdown somehow — either the client ages it locally (drifts, and
+    resets to the stale server value on every reload/poll) or the server
+    resends "now + N seconds" on every poll (which just slides forward
+    with wall-clock time and never actually counts down). Anchoring to the
+    last real progress event — the run's start, before any dialogue has
+    finished — sidesteps both: the same fixed point in time comes back on
+    every poll until a dialogue genuinely finishes, so the client can just
+    subtract "now" from it locally, and a page reload sees the exact same
+    target instead of restarting the countdown.
+    """
+    seconds, source = estimate_run_eta_seconds(run, prompt)
+    if seconds is None:
+        return None, None
+
+    anchor = run.last_progress_at or run.started_at
+    if anchor is None:
+        return None, None
+    # SQLite drops tzinfo on round-trip even though we always write UTC
+    # instants (datetime.now(timezone.utc)) — reattach it, since an ISO
+    # string with no offset gets parsed as local time by JS's Date(),
+    # which would silently shift the ETA by the browser's UTC offset.
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+
+    return anchor + timedelta(seconds=seconds), source
+
+
 def _run_worker(run_id: int, app) -> None:
     with app.app_context():
         from .extensions import db
@@ -812,6 +844,7 @@ def _run_worker(run_id: int, app) -> None:
                         duration_seconds=time.monotonic() - started,
                     ))
                     run.processed_count += 1
+                    run.last_progress_at = datetime.now(timezone.utc)
                     db.session.commit()
 
             else:
@@ -951,6 +984,7 @@ def _run_worker(run_id: int, app) -> None:
                         duration_seconds=duration,
                     ))
                     run.processed_count += 1
+                    run.last_progress_at = datetime.now(timezone.utc)
                     db.session.commit()
                     print(
                         f"run {run.id}: recorded dialogue "

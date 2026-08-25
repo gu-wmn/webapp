@@ -225,24 +225,15 @@
       : 0;
     if (fill) fill.style.width = pct + "%";
     if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
-    // The server only recomputes eta_seconds when a dialogue finishes, so
-    // it comes back essentially unchanged on every poll in between — stash
-    // it as a base + timestamp and let tickEtaDisplays() count it down
-    // locally every second instead of displaying it raw. Only re-anchor
-    // that base when processed_count actually moves (a dialogue really did
-    // finish, so the server's number is a genuinely fresh estimate);
-    // otherwise re-anchoring on every 2s poll would snap the countdown back
-    // to nearly the same value each time and it would never visibly move.
-    if (data.eta_seconds != null) {
-      if (container._etaProcessedCount !== data.processed_count || container._etaBaseSeconds == null) {
-        container._etaBaseSeconds = data.eta_seconds;
-        container._etaBaseTime = Date.now();
-        container._etaSource = data.eta_source;
-        container._etaProcessedCount = data.processed_count;
-      }
-    } else {
-      container._etaBaseSeconds = null;
-    }
+    // eta_at is an absolute point in time computed server-side (anchored
+    // to the run's last real progress event, not to "now"), so it comes
+    // back identical on every poll until a dialogue genuinely finishes —
+    // the client just has to subtract the current time from it each
+    // second. That also makes it reload-safe: a fresh page load fetches
+    // the same fixed target and the countdown picks up exactly where it
+    // should be, instead of a client-tracked duration resetting.
+    container._etaAtMs = data.eta_at ? new Date(data.eta_at).getTime() : null;
+    container._etaSource = data.eta_source;
     if (warning) {
       if (data.last_error) {
         warning.textContent = data.last_error;
@@ -257,12 +248,11 @@
     document.querySelectorAll(".run-progress").forEach(container => {
       const eta = container.querySelector(".run-eta");
       if (!eta) return;
-      if (container._etaBaseSeconds == null) {
+      if (container._etaAtMs == null) {
         eta.textContent = "";
         return;
       }
-      const elapsed = (Date.now() - container._etaBaseTime) / 1000;
-      const remaining = Math.max(0, container._etaBaseSeconds - elapsed);
+      const remaining = Math.max(0, (container._etaAtMs - Date.now()) / 1000);
       const suffix = container._etaSource === "historical" ? " (from past runs)" : "";
       eta.textContent = `~${formatEta(remaining)} remaining${suffix}`;
     });

@@ -1510,13 +1510,14 @@ def run_status(run_id: int):
         id=run.experiment_id, user_email=session["user"]
     ).first_or_404()
 
-    eta_seconds = None
+    eta_at = None
     eta_source = None
     if run.status in ("pending", "running"):
-        from .runner import estimate_run_eta_seconds
+        from .runner import estimate_run_eta
 
         prompt = db.session.get(Prompt, run.prompt_id)
-        eta_seconds, eta_source = estimate_run_eta_seconds(run, prompt)
+        eta_dt, eta_source = estimate_run_eta(run, prompt)
+        eta_at = eta_dt.isoformat() if eta_dt else None
 
     return jsonify({
         "run_id": run.id,
@@ -1525,7 +1526,7 @@ def run_status(run_id: int):
         "total_count": run.total_count,
         "error_message": run.error_message,
         "last_error": run.last_error if run.status in ("pending", "running") else None,
-        "eta_seconds": eta_seconds,
+        "eta_at": eta_at,
         "eta_source": eta_source,
     })
 
