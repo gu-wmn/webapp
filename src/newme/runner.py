@@ -824,12 +824,26 @@ def _run_worker(run_id: int, app) -> None:
                         job["chat_kwargs"] = chat_kwargs
                         del job["prompt_text"]
 
+                    # print(flush=True), not app.logger: Flask's default
+                    # logger filters INFO below its effective level unless
+                    # something has explicitly configured it, which nothing
+                    # here does — a plain flushed print is guaranteed to
+                    # reach the container's captured stdout regardless.
+                    print(
+                        f"run {run.id}: dispatching {len(jobs)} dialogue(s) to {host} "
+                        f"(model={prompt.model}, num_ctx={run_num_ctx})",
+                        flush=True,
+                    )
                     with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
                         future_to_job = {}
                         for job in jobs:
                             job["started"] = time.monotonic()
                             future = executor.submit(_chat_with_retry, client, job["chat_kwargs"])
                             future_to_job[future] = job
+                        print(
+                            f"run {run.id}: all {len(jobs)} dialogue(s) submitted, waiting for responses",
+                            flush=True,
+                        )
 
                         for future in concurrent.futures.as_completed(future_to_job):
                             db.session.refresh(run)
@@ -841,6 +855,12 @@ def _run_worker(run_id: int, app) -> None:
                             output = None
                             raw_response = None
                             error_msg = None
+                            print(
+                                f"run {run.id}: result arrived for dialogue "
+                                f"{exp_dialogue.dialogue_external_id} "
+                                f"(after {time.monotonic() - job['started']:.1f}s)",
+                                flush=True,
+                            )
 
                             try:
                                 response = future.result()
@@ -889,6 +909,13 @@ def _run_worker(run_id: int, app) -> None:
                             ))
                             run.processed_count += 1
                             db.session.commit()
+                            print(
+                                f"run {run.id}: recorded dialogue "
+                                f"{exp_dialogue.dialogue_external_id} "
+                                f"({run.processed_count}/{run.total_count} done)"
+                                + (f" — error: {error_msg}" if error_msg else ""),
+                                flush=True,
+                            )
 
             run.status = "complete"
             run.completed_at = datetime.now(timezone.utc)
