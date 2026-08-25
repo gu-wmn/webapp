@@ -432,6 +432,7 @@ class Run(db.Model):
     total_count = db.Column(db.Integer, nullable=False, default=0)
     processed_count = db.Column(db.Integer, nullable=False, default=0)
     total_char_count = db.Column(db.Integer, nullable=True)
+    current_dialogue_char_count = db.Column(db.Integer, nullable=True)
     last_progress_at = db.Column(db.DateTime, nullable=True)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)

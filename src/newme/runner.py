@@ -649,16 +649,16 @@ def compute_experiment_char_count(experiment) -> int:
     return total
 
 
-def estimate_run_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
-    """Rough ETA, in seconds, for the dialogues still left in a run.
+def _seconds_per_char_rate(run, prompt) -> tuple[float | None, str | None, int]:
+    """Seconds-per-character rate to extrapolate dialogue timing from.
 
-    Prefers a seconds-per-character rate derived from dialogues already
-    completed in this run, since that reflects whatever's actually
-    happening on the host right now (host load, model, current context
-    sizing). Falls back to this model's rate from past runs so there's
-    still something to show before the first dialogue in this run
-    finishes. Returns (seconds, source), where source is "current_run",
-    "historical", or None if neither has enough data yet.
+    Prefers a rate derived from dialogues already completed in this run,
+    since that reflects whatever's actually happening on the host right
+    now (host load, model, current context sizing). Falls back to this
+    model's rate pooled from past runs so there's still something to show
+    before the first dialogue in this run finishes. Returns
+    (seconds_per_char, source, chars_processed_in_this_run) — source is
+    "current_run", "historical", or None if neither has enough data yet.
     """
     from .extensions import db
     from .models.experiment import Prompt, Run, RunResult
@@ -678,64 +678,110 @@ def estimate_run_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
     current_chars = current_chars or 0
 
     if current_chars:
-        rate = current_seconds / current_chars
-        source = "current_run"
-    else:
-        hist_seconds, hist_chars = (
-            db.session.query(
-                db.func.sum(RunResult.duration_seconds),
-                db.func.sum(RunResult.dialogue_char_count),
-            )
-            .join(Run, RunResult.run_id == Run.id)
-            .join(Prompt, Run.prompt_id == Prompt.id)
-            .filter(
-                Prompt.model == prompt.model,
-                RunResult.duration_seconds.isnot(None),
-                RunResult.dialogue_char_count > 0,
-            )
-            .first()
-        )
-        if not hist_chars:
-            return None, None
-        rate = hist_seconds / hist_chars
-        source = "historical"
+        return current_seconds / current_chars, "current_run", current_chars
 
-    if run.total_char_count is None:
+    hist_seconds, hist_chars = (
+        db.session.query(
+            db.func.sum(RunResult.duration_seconds),
+            db.func.sum(RunResult.dialogue_char_count),
+        )
+        .join(Run, RunResult.run_id == Run.id)
+        .join(Prompt, Run.prompt_id == Prompt.id)
+        .filter(
+            Prompt.model == prompt.model,
+            RunResult.duration_seconds.isnot(None),
+            RunResult.dialogue_char_count > 0,
+        )
+        .first()
+    )
+    if not hist_chars:
+        return None, None, current_chars
+    return hist_seconds / hist_chars, "historical", current_chars
+
+
+def estimate_run_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
+    """Rough ETA, in seconds, for the dialogues still left in a run.
+
+    See _seconds_per_char_rate() for how the rate itself is picked.
+    """
+    rate, source, current_chars = _seconds_per_char_rate(run, prompt)
+    if rate is None or run.total_char_count is None:
         return None, None
 
     remaining_chars = max(run.total_char_count - current_chars, 0)
     return rate * remaining_chars, source
 
 
-def estimate_run_eta(run, prompt) -> tuple[datetime | None, str | None]:
-    """Absolute estimated completion time for a run, in place of a bare
-    "N seconds remaining".
-
-    A duration handed to the client would have to be turned back into a
-    countdown somehow — either the client ages it locally (drifts, and
-    resets to the stale server value on every reload/poll) or the server
-    resends "now + N seconds" on every poll (which just slides forward
-    with wall-clock time and never actually counts down). Anchoring to the
-    last real progress event — the run's start, before any dialogue has
-    finished — sidesteps both: the same fixed point in time comes back on
-    every poll until a dialogue genuinely finishes, so the client can just
-    subtract "now" from it locally, and a page reload sees the exact same
-    target instead of restarting the countdown.
+def estimate_current_dialogue_eta_seconds(run, prompt) -> tuple[float | None, str | None]:
+    """Rough ETA, in seconds, for just the dialogue currently being
+    processed — as opposed to estimate_run_eta_seconds's estimate for
+    everything still left in the run. Uses the same rate, applied to this
+    one dialogue's own character count (Run.current_dialogue_char_count,
+    stamped by the worker right before dispatch) instead of everything
+    still queued.
     """
-    seconds, source = estimate_run_eta_seconds(run, prompt)
-    if seconds is None:
+    if not run.current_dialogue_char_count:
         return None, None
+    rate, source, _ = _seconds_per_char_rate(run, prompt)
+    if rate is None:
+        return None, None
+    return rate * run.current_dialogue_char_count, source
 
+
+def _progress_anchor(run) -> datetime | None:
+    """The moment the run's current unit of work started: the last
+    completed dialogue for an in-progress run, or the run's own start
+    before anything has finished. Since dialogues are dispatched strictly
+    one at a time, this doubles as "when the dialogue in flight right now
+    started" — the same anchor works for both the whole-run ETA and the
+    current-dialogue ETA below.
+    """
     anchor = run.last_progress_at or run.started_at
     if anchor is None:
-        return None, None
+        return None
     # SQLite drops tzinfo on round-trip even though we always write UTC
     # instants (datetime.now(timezone.utc)) — reattach it, since an ISO
     # string with no offset gets parsed as local time by JS's Date(),
     # which would silently shift the ETA by the browser's UTC offset.
     if anchor.tzinfo is None:
         anchor = anchor.replace(tzinfo=timezone.utc)
+    return anchor
 
+
+def estimate_run_eta(run, prompt) -> tuple[datetime | None, str | None]:
+    """Absolute estimated completion time for everything still left in a
+    run, in place of a bare "N seconds remaining".
+
+    A duration handed to the client would have to be turned back into a
+    countdown somehow — either the client ages it locally (drifts, and
+    resets to the stale server value on every reload/poll) or the server
+    resends "now + N seconds" on every poll (which just slides forward
+    with wall-clock time and never actually counts down). Anchoring to the
+    last real progress event sidesteps both: the same fixed point in time
+    comes back on every poll until a dialogue genuinely finishes, so the
+    client can just subtract "now" from it locally, and a page reload sees
+    the exact same target instead of restarting the countdown.
+    """
+    seconds, source = estimate_run_eta_seconds(run, prompt)
+    if seconds is None:
+        return None, None
+    anchor = _progress_anchor(run)
+    if anchor is None:
+        return None, None
+    return anchor + timedelta(seconds=seconds), source
+
+
+def estimate_current_dialogue_eta(run, prompt) -> tuple[datetime | None, str | None]:
+    """Absolute estimated completion time for just the dialogue currently
+    being processed. See estimate_run_eta for why this is an absolute
+    timestamp rather than a bare duration.
+    """
+    seconds, source = estimate_current_dialogue_eta_seconds(run, prompt)
+    if seconds is None:
+        return None, None
+    anchor = _progress_anchor(run)
+    if anchor is None:
+        return None, None
     return anchor + timedelta(seconds=seconds), source
 
 
@@ -926,6 +972,14 @@ def _run_worker(run_id: int, app) -> None:
                         }
                         if schema:
                             chat_kwargs["format"] = schema
+
+                        # Stamped before dispatch (and committed, since
+                        # _chat_with_retry blocks for the whole generation)
+                        # so /api/runs/<id>/status can estimate an ETA for
+                        # just this one dialogue, not only the run as a
+                        # whole.
+                        run.current_dialogue_char_count = char_count
+                        db.session.commit()
 
                         # print(flush=True), not app.logger: Flask's default
                         # logger filters INFO below its effective level

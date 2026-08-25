@@ -1510,14 +1510,18 @@ def run_status(run_id: int):
         id=run.experiment_id, user_email=session["user"]
     ).first_or_404()
 
-    eta_at = None
-    eta_source = None
+    run_eta_at = None
+    run_eta_source = None
+    dialogue_eta_at = None
+    dialogue_eta_source = None
     if run.status in ("pending", "running"):
-        from .runner import estimate_run_eta
+        from .runner import estimate_current_dialogue_eta, estimate_run_eta
 
         prompt = db.session.get(Prompt, run.prompt_id)
-        eta_dt, eta_source = estimate_run_eta(run, prompt)
-        eta_at = eta_dt.isoformat() if eta_dt else None
+        run_eta_dt, run_eta_source = estimate_run_eta(run, prompt)
+        run_eta_at = run_eta_dt.isoformat() if run_eta_dt else None
+        dialogue_eta_dt, dialogue_eta_source = estimate_current_dialogue_eta(run, prompt)
+        dialogue_eta_at = dialogue_eta_dt.isoformat() if dialogue_eta_dt else None
 
     return jsonify({
         "run_id": run.id,
@@ -1526,8 +1530,10 @@ def run_status(run_id: int):
         "total_count": run.total_count,
         "error_message": run.error_message,
         "last_error": run.last_error if run.status in ("pending", "running") else None,
-        "eta_at": eta_at,
-        "eta_source": eta_source,
+        "run_eta_at": run_eta_at,
+        "run_eta_source": run_eta_source,
+        "dialogue_eta_at": dialogue_eta_at,
+        "dialogue_eta_source": dialogue_eta_source,
     })
 
 

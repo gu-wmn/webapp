@@ -139,6 +139,7 @@
               <span class="run-progress-label">
                 {{ latest_run.processed_count }} / {{ latest_run.total_count }}
               </span>
+              <span class="dialogue-eta"></span>
               <span class="run-eta"></span>
               <button class="abort-run-btn" data-abort-url="{{ url_for('portal.abort_run', run_id=latest_run.id) }}">Abort</button>
               <div class="run-connection-warning" {% if not latest_run.last_error %}style="display:none"{% endif %}>{{ latest_run.last_error }}</div>
@@ -216,6 +217,14 @@
     return `${s}s`;
   }
 
+  // Two separate estimates: how much longer the dialogue in flight right
+  // now will take, and how much longer the whole remaining run will take.
+  // Both come back from the server as absolute timestamps (see below).
+  const ETA_FIELDS = [
+    { selector: ".dialogue-eta", field: "dialogue_eta", label: "Current dialogue" },
+    { selector: ".run-eta", field: "run_eta", label: "Entire prompt" },
+  ];
+
   function updateProgressEl(container, data) {
     const fill = container.querySelector(".progress-fill");
     const label = container.querySelector(".run-progress-label");
@@ -232,8 +241,11 @@
     // second. That also makes it reload-safe: a fresh page load fetches
     // the same fixed target and the countdown picks up exactly where it
     // should be, instead of a client-tracked duration resetting.
-    container._etaAtMs = data.eta_at ? new Date(data.eta_at).getTime() : null;
-    container._etaSource = data.eta_source;
+    ETA_FIELDS.forEach(({ field }) => {
+      const at = data[`${field}_at`];
+      container[`_${field}AtMs`] = at ? new Date(at).getTime() : null;
+      container[`_${field}Source`] = data[`${field}_source`];
+    });
     if (warning) {
       if (data.last_error) {
         warning.textContent = data.last_error;
@@ -246,15 +258,18 @@
 
   function tickEtaDisplays() {
     document.querySelectorAll(".run-progress").forEach(container => {
-      const eta = container.querySelector(".run-eta");
-      if (!eta) return;
-      if (container._etaAtMs == null) {
-        eta.textContent = "";
-        return;
-      }
-      const remaining = Math.max(0, (container._etaAtMs - Date.now()) / 1000);
-      const suffix = container._etaSource === "historical" ? " (from past runs)" : "";
-      eta.textContent = `~${formatEta(remaining)} remaining${suffix}`;
+      ETA_FIELDS.forEach(({ selector, field, label }) => {
+        const eta = container.querySelector(selector);
+        if (!eta) return;
+        const atMs = container[`_${field}AtMs`];
+        if (atMs == null) {
+          eta.textContent = "";
+          return;
+        }
+        const remaining = Math.max(0, (atMs - Date.now()) / 1000);
+        const suffix = container[`_${field}Source`] === "historical" ? " (from past runs)" : "";
+        eta.textContent = `${label}: ~${formatEta(remaining)} remaining${suffix}`;
+      });
     });
   }
   setInterval(tickEtaDisplays, 1000);
@@ -356,6 +371,7 @@
       <span class="run-status-badge run-running">Running</span>
       <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
       <span class="run-progress-label">0 / ${totalCount}</span>
+      <span class="dialogue-eta"></span>
       <span class="run-eta"></span>
       <button class="abort-run-btn" data-abort-url="${abortUrlBase}${runId}/abort">Abort</button>
       <div class="run-connection-warning" style="display:none"></div>
