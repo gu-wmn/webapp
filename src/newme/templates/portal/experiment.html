@@ -225,15 +225,21 @@
       : 0;
     if (fill) fill.style.width = pct + "%";
     if (label) label.textContent = `${data.processed_count} / ${data.total_count}`;
-    // The server only recomputes eta_seconds when a dialogue finishes,
-    // which can be minutes between polls — displaying that raw value would
-    // sit frozen the whole time despite saying "remaining". Instead, stash
+    // The server only recomputes eta_seconds when a dialogue finishes, so
+    // it comes back essentially unchanged on every poll in between — stash
     // it as a base + timestamp and let tickEtaDisplays() count it down
-    // locally every second; each poll just corrects that base.
+    // locally every second instead of displaying it raw. Only re-anchor
+    // that base when processed_count actually moves (a dialogue really did
+    // finish, so the server's number is a genuinely fresh estimate);
+    // otherwise re-anchoring on every 2s poll would snap the countdown back
+    // to nearly the same value each time and it would never visibly move.
     if (data.eta_seconds != null) {
-      container._etaBaseSeconds = data.eta_seconds;
-      container._etaBaseTime = Date.now();
-      container._etaSource = data.eta_source;
+      if (container._etaProcessedCount !== data.processed_count || container._etaBaseSeconds == null) {
+        container._etaBaseSeconds = data.eta_seconds;
+        container._etaBaseTime = Date.now();
+        container._etaSource = data.eta_source;
+        container._etaProcessedCount = data.processed_count;
+      }
     } else {
       container._etaBaseSeconds = null;
     }
