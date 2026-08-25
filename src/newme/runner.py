@@ -575,8 +575,22 @@ def _regex_run_worker(regex_run_id: int, app) -> None:
                 db.session.commit()
 
 
-def _chat_with_retry(client, chat_kwargs: dict, retries: int = 1, backoff_seconds: float = 2.0):
-    """Call client.chat(), retrying once on a transport-level failure.
+def _chat_with_retry(client, chat_kwargs: dict, retries: int = 1, backoff_seconds: float = 2.0) -> str:
+    """Call client.chat() with stream=True and return the fully accumulated
+    response text, retrying once on a transport-level failure.
+
+    Streams rather than making one blocking non-streaming call: a
+    non-streaming request sits completely silent on the wire for the whole
+    generation (we saw this take 10+ minutes on real dialogues), and that
+    silence is exactly what idle-connection timeouts in NAT gateways,
+    firewalls, and load balancers tend to kill — Ollama finishes and tries
+    to send the response into a connection that's already been dropped
+    somewhere on the path, and it never arrives. Streaming keeps the
+    connection actively transmitting chunks throughout, which should avoid
+    that failure mode, and also means ollama_client's read timeout (the gap
+    between chunks, not the whole response) becomes a meaningful signal
+    instead of something that has to tolerate an entire generation's worth
+    of silence.
 
     A dropped or timed-out connection is often transient — worth one more
     real attempt at getting results before giving up on this dialogue
@@ -589,7 +603,11 @@ def _chat_with_retry(client, chat_kwargs: dict, retries: int = 1, backoff_second
     attempt = 0
     while True:
         try:
-            return client.chat(**chat_kwargs)
+            chunks: list[str] = []
+            for part in client.chat(**chat_kwargs, stream=True):
+                if part.message and part.message.content:
+                    chunks.append(part.message.content)
+            return "".join(chunks)
         except httpx.TransportError:
             if attempt >= retries:
                 raise
@@ -863,8 +881,7 @@ def _run_worker(run_id: int, app) -> None:
                             )
 
                             try:
-                                response = future.result()
-                                raw_response = response.message.content
+                                raw_response = future.result()
 
                                 if schema:
                                     parsed = json.loads(raw_response)
