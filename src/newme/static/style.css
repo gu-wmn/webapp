@@ -280,6 +280,14 @@ legend {
   font-size: 0.92rem;
 }
 
+.checkbox-row .option-count {
+  margin-left: auto;
+  padding-left: 0.6rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .compact {
   margin-bottom: 0.32rem;
 }

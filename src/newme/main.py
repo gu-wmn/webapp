@@ -147,6 +147,8 @@ def main_page():
         .all()
     )
 
+    _annotate_filter_option_counts(filters, sequences)
+
     if filters["group_by"] == "DIALOGUE":
         summaries = _summaries_by_dialogue(sequences, filters, corpus_options)
     elif filters["group_by"] == "LABEL":
@@ -895,6 +897,46 @@ def _sequence_satisfies_label_filter(sequence: AnnotationSequence, filters: dict
         return filters["label_names"] <= present_types
 
     return bool(present_types)
+
+
+def _sequence_is_result(sequence: AnnotationSequence, filters: dict) -> bool:
+    return _is_matching_wmn(sequence, filters) and _sequence_satisfies_label_filter(sequence, filters)
+
+
+def _count_for_option(
+    sequences: list[AnnotationSequence],
+    filters: dict,
+    dimension_key: str,
+    value: str,
+) -> int:
+    # Replace (not union with) this dimension's current selection, so an option's
+    # count never depends on sibling selections within its own filter group - only
+    # on the other groups' current state.
+    trial_filters = dict(filters)
+    trial_filters[dimension_key] = {value}
+    return sum(1 for sequence in sequences if _sequence_is_result(sequence, trial_filters))
+
+
+def _annotate_filter_option_counts(filters: dict, sequences: list[AnnotationSequence]) -> None:
+    for option in filters["wmn_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "selected_wmn_values", WMN_TYPE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["label_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "label_names", LABEL_VALUE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["context_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "context_values", CONTEXT_VALUE_BY_NAME[option["name"]]
+        )
+
+    for option in filters["corpus_options"]:
+        option["count"] = _count_for_option(
+            sequences, filters, "corpus_values", option["codename"]
+        )
 
 
 def _add_label_count(bucket: dict[str, dict], excerpt: str, excerpt_hash: str, count: int = 1) -> None:
