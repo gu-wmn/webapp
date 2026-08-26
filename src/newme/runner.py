@@ -1079,7 +1079,17 @@ def _run_worker(run_id: int, app) -> None:
             run.last_error = None
 
             if not is_regex and initial_run_estimate_seconds is not None:
-                actual_seconds = (run.completed_at - run.started_at).total_seconds()
+                # started_at can come back tz-naive here: db.session.refresh()
+                # inside the dispatch loop reloads it from SQLite, which (as
+                # elsewhere in this file) drops the tzinfo we originally set
+                # it with — subtracting that from the tz-aware completed_at
+                # below raises TypeError instead of just being wrong, which
+                # is exactly what crashed a real run and left it marked
+                # "error" despite every dialogue having actually succeeded.
+                run_started_at = run.started_at
+                if run_started_at.tzinfo is None:
+                    run_started_at = run_started_at.replace(tzinfo=timezone.utc)
+                actual_seconds = (run.completed_at - run_started_at).total_seconds()
                 print(
                     f"run {run.id}: finished — actual total {actual_seconds:.1f}s vs. "
                     f"initial estimate {initial_run_estimate_seconds:.1f}s via "
