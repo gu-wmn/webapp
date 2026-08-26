@@ -41,9 +41,9 @@
     <div class="form-field">
       <label for="num_ctx">Context window <span class="field-hint">(optional)</span></label>
       <input type="number" id="num_ctx" name="num_ctx"
-        min="512" step="512" placeholder="Auto, sized to the prompt"
+        min="512" step="512" placeholder="Ollama's own default"
         value="{{ prompt.num_ctx if prompt and prompt.num_ctx else '' }}">
-      <p class="exp-hint">Left blank, this is sized automatically to each dialogue's assembled prompt so it's never truncated. Set a value only to override that.</p>
+      <p class="exp-hint">Left blank, no context size is sent and Ollama decides for itself — including how much of it fits on the GPU versus falling back to system RAM. Set a value only to force a specific window; forcing one large enough for your longest dialogues can push it onto the GPU entirely and destabilize the server, so blank is the safer default.</p>
     </div>
   </div>
 

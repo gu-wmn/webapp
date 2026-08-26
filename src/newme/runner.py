@@ -126,36 +126,6 @@ def assemble_prompt_text(
     return text
 
 
-# Chars-per-token estimate for English text. A flat 4 is the usual rule of
-# thumb for prose, but a large share of every prompt here is JSON (the
-# serialized dialogue, which dominates character count on longer dialogues) —
-# punctuation, quotes, and repeated keys tokenize less efficiently than prose,
-# commonly closer to 3.3-3.7 chars/token. Using 3.5 errs toward overestimating
-# the token count, which is the safe direction: it costs a little unused
-# context, where underestimating costs truncated dialogue.
-_CHARS_PER_TOKEN = 3.5
-# Headroom reserved for the model's response (the JSON hits array, plus
-# whatever reasoning a model does before it) — the app never sets a
-# num_predict cap, so this is the only thing keeping the response from
-# crowding out context that's needed for the input. Scales with input size
-# (longer dialogues tend to surface more candidate WMNs, so more hits to
-# report) on top of a flat floor, capped so it doesn't balloon on huge inputs.
-_OUTPUT_TOKEN_RESERVE_FLOOR = 2048
-_OUTPUT_TOKEN_RESERVE_FRACTION = 0.08
-_OUTPUT_TOKEN_RESERVE_CAP = 8192
-_MIN_NUM_CTX = 2048
-# Rounding the raw estimate straight up to the next power of two gives a
-# sawtooth headroom pattern: generous right after crossing a boundary, but
-# shrinking toward almost nothing right before the next one — a prompt that
-# needs 131,000 tokens gets the same 131,072 window as one that needs 65,537,
-# leaving it almost no margin for estimation error. Padding the estimate by
-# this factor before rounding guarantees a floor on headroom everywhere in a
-# tier, not just at its start — 1.42x reproduces a real-world scaling table
-# (16K/32K/64K/128K/256K windows at the 8K/20K/45K/90K/... input marks) almost
-# exactly. No upper cap: correctness (not truncating) matters more than
-# bounding worst-case memory use, so a large enough dialogue keeps doubling.
-_SAFETY_MARGIN_MULTIPLIER = 1.42
-
 # This is span extraction/classification against a fixed schema, not creative
 # generation — there's a defensible "right" answer for a given dialogue, so
 # the model should commit to its best read rather than sample around it. Not
@@ -163,35 +133,6 @@ _SAFETY_MARGIN_MULTIPLIER = 1.42
 # greedy decoding can fall into on longer dialogues, at negligible cost to
 # run-to-run consistency.
 DEFAULT_TEMPERATURE = 0.1
-
-
-def _adaptive_num_ctx(prompt_length: int) -> int:
-    """Size the context window to an assembled prompt's length rather than
-    trusting whatever a model's own default happens to be — Ollama's
-    defaults (often 2048-4096) silently truncate long dialogues instead of
-    erroring, which would quietly corrupt results. Only used when a prompt
-    doesn't set its own num_ctx override.
-
-    Takes a length, not the prompt text itself: llama.cpp fixes num_ctx at
-    model-load time, so a value that varies per request forces Ollama to
-    reload the entire model before serving each one — callers must compute
-    this once per run (from the largest dialogue in it) and reuse it for
-    every dialogue, never call it per-dialogue.
-
-    The padded total is rounded up to the next power of two, matching how
-    context windows are conventionally sized. No upper bound — only a floor
-    for degenerate (near-empty) prompts.
-    """
-    input_tokens = -int(-prompt_length // _CHARS_PER_TOKEN)  # ceil division
-    output_reserve = min(
-        _OUTPUT_TOKEN_RESERVE_CAP,
-        max(_OUTPUT_TOKEN_RESERVE_FLOOR, int(input_tokens * _OUTPUT_TOKEN_RESERVE_FRACTION)),
-    )
-    needed = (input_tokens + output_reserve) * _SAFETY_MARGIN_MULTIPLIER
-    num_ctx = 1
-    while num_ctx < needed:
-        num_ctx *= 2
-    return max(_MIN_NUM_CTX, num_ctx)
 
 
 def _simplified_default() -> str:
@@ -972,16 +913,18 @@ def _run_worker(run_id: int, app) -> None:
                             "model": prompt.model,
                             "messages": [{"role": "user", "content": prompt_text}],
                             "options": {
-                                "num_ctx": (
-                                    prompt.num_ctx if prompt.num_ctx is not None
-                                    else _adaptive_num_ctx(len(prompt_text))
-                                ),
                                 "temperature": (
                                     prompt.temperature if prompt.temperature is not None
                                     else DEFAULT_TEMPERATURE
                                 ),
                             },
                         }
+                        # No num_ctx unless a prompt explicitly sets one —
+                        # left out, Ollama sizes it (and its own GPU/CPU
+                        # layer split) itself instead of everything being
+                        # forced through whatever we ask for.
+                        if prompt.num_ctx is not None:
+                            chat_kwargs["options"]["num_ctx"] = prompt.num_ctx
                         if schema:
                             chat_kwargs["format"] = schema
 
@@ -1008,7 +951,7 @@ def _run_worker(run_id: int, app) -> None:
                         print(
                             f"run {run.id}: dispatching dialogue "
                             f"{exp_dialogue.dialogue_external_id} "
-                            f"(num_ctx={chat_kwargs['options']['num_ctx']}, "
+                            f"(num_ctx={chat_kwargs['options'].get('num_ctx', 'model default')}, "
                             f"chars={char_count}, "
                             f"estimated={'%.1fs via %s' % (estimated_seconds, estimate_source) if estimated_seconds is not None else 'n/a'})",
                             flush=True,
