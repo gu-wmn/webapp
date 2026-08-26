@@ -12,6 +12,17 @@
       <label for="name">Name</label>
       <input type="text" id="name" name="name" required autofocus>
     </div>
+    <div class="form-field">
+      <label>Template</label>
+      <label class="exp-check">
+        <input type="radio" name="template" value="single">
+        Single prompt — one pass that both detects and confirms WMNs
+      </label>
+      <label class="exp-check">
+        <input type="radio" name="template" value="dual" checked>
+        Dual prompt — a first pass proposes candidate Indicators, a second confirms them
+      </label>
+    </div>
     <button type="submit">Create</button>
   </form>
 </div>

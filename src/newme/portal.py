@@ -22,6 +22,11 @@ from .models.experiment import (
     DEFAULT_PROMPT_2_NAME,
     DEFAULT_PROMPT_2_OUTPUT_FORMAT,
     DEFAULT_PROMPT_2_TEXT,
+    DEFAULT_SINGLE_PROMPT_HOST,
+    DEFAULT_SINGLE_PROMPT_MODEL,
+    DEFAULT_SINGLE_PROMPT_NAME,
+    DEFAULT_SINGLE_PROMPT_OUTPUT_FORMAT,
+    DEFAULT_SINGLE_PROMPT_TEXT,
     DETAILED_APPENDIX_DEFAULT,
     DIALOGUE_INPUT_INSTRUCTIONS_DEFAULT,
     FREE_TEXT_APPENDIX_DEFAULT,
@@ -805,32 +810,45 @@ def new_experiment():
     error = None
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
+        template = request.form.get("template") or "dual"
         if not name:
             error = "Name is required."
         else:
             exp = Experiment(user_email=user, name=name)
             db.session.add(exp)
             db.session.flush()
-            db.session.add(Prompt(
-                experiment_id=exp.id,
-                position=1,
-                name=DEFAULT_PROMPT_1_NAME,
-                host=DEFAULT_PROMPT_1_HOST,
-                model=DEFAULT_PROMPT_1_MODEL,
-                include_global_template=True,
-                prompt_text=DEFAULT_PROMPT_1_TEXT,
-                output_format=DEFAULT_PROMPT_1_OUTPUT_FORMAT,
-            ))
-            db.session.add(Prompt(
-                experiment_id=exp.id,
-                position=2,
-                name=DEFAULT_PROMPT_2_NAME,
-                host=DEFAULT_PROMPT_2_HOST,
-                model=DEFAULT_PROMPT_2_MODEL,
-                include_global_template=True,
-                prompt_text=DEFAULT_PROMPT_2_TEXT,
-                output_format=DEFAULT_PROMPT_2_OUTPUT_FORMAT,
-            ))
+            if template == "single":
+                db.session.add(Prompt(
+                    experiment_id=exp.id,
+                    position=1,
+                    name=DEFAULT_SINGLE_PROMPT_NAME,
+                    host=DEFAULT_SINGLE_PROMPT_HOST,
+                    model=DEFAULT_SINGLE_PROMPT_MODEL,
+                    include_global_template=True,
+                    prompt_text=DEFAULT_SINGLE_PROMPT_TEXT,
+                    output_format=DEFAULT_SINGLE_PROMPT_OUTPUT_FORMAT,
+                ))
+            else:
+                db.session.add(Prompt(
+                    experiment_id=exp.id,
+                    position=1,
+                    name=DEFAULT_PROMPT_1_NAME,
+                    host=DEFAULT_PROMPT_1_HOST,
+                    model=DEFAULT_PROMPT_1_MODEL,
+                    include_global_template=True,
+                    prompt_text=DEFAULT_PROMPT_1_TEXT,
+                    output_format=DEFAULT_PROMPT_1_OUTPUT_FORMAT,
+                ))
+                db.session.add(Prompt(
+                    experiment_id=exp.id,
+                    position=2,
+                    name=DEFAULT_PROMPT_2_NAME,
+                    host=DEFAULT_PROMPT_2_HOST,
+                    model=DEFAULT_PROMPT_2_MODEL,
+                    include_global_template=True,
+                    prompt_text=DEFAULT_PROMPT_2_TEXT,
+                    output_format=DEFAULT_PROMPT_2_OUTPUT_FORMAT,
+                ))
             db.session.commit()
             _resolve_dialogues(exp)
             return redirect(url_for("portal.experiment", experiment_id=exp.id))

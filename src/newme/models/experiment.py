@@ -199,6 +199,36 @@ DEFAULT_PROMPT_2_TEXT = (
     "to confirm a complete WMN."
 )
 
+DEFAULT_SINGLE_PROMPT_NAME = "Find WMNs"
+DEFAULT_SINGLE_PROMPT_MODEL = "qwen3.8:27b-q8_0"
+DEFAULT_SINGLE_PROMPT_HOST = "http://lark.clasp.gu.se:11434"
+DEFAULT_SINGLE_PROMPT_OUTPUT_FORMAT = "detailed"
+DEFAULT_SINGLE_PROMPT_TEXT = """Your task is to identify Word Meaning Negotiations (WMNs) in this dialogue.
+
+A WMN occurs when a conversation shifts from its main topic to discussing the meaning, interpretation, or use of a particular word or phrase. This meta-linguistic shift distinguishes a WMN from ordinary discussion of the topic itself.
+
+A WMN has three parts:
+
+Trigger: A preceding utterance containing the specific word or phrase whose meaning, interpretation, or use is subsequently questioned, challenged, or requested for clarification. The Trigger may not be recognisable as such until the Indicator appears.
+
+Indicator: An utterance signalling that the meaning, interpretation, or use of a word or phrase has become an issue. The two main forms are:
+
+NON — non-understanding: the speaker does not understand an expression or requests clarification of what it means.
+DIN — disagreement: the speaker challenges the meaning, interpretation, appropriateness, or applicability of an expression in the current context.
+Other: use only when the utterance clearly functions as a meta-linguistic Indicator but does not fit NON or DIN.
+Negotiation: One or more subsequent utterances in which participants address the meaning, interpretation, or use of the Trigger expression. The Negotiation must provide evidence of a genuine meta-linguistic shift: attention moves from simply discussing the original topic to discussing the expression itself. The Negotiation may be intertwined with continued discussion of the original topic and may span multiple turns.
+
+For each utterance that could signal a meta-linguistic issue:
+
+Identify the particular word or phrase it concerns, and locate that expression in a preceding utterance. This is the Trigger.
+Examine the utterance or utterances that follow. Determine whether they actually address the meaning, interpretation, or use of the Trigger expression. These constitute the Negotiation.
+Confirm that there is a genuine meta-linguistic shift. It is not sufficient for the conversation merely to continue discussing the underlying topic.
+Distinguish semantic or meta-linguistic issues from simple mishearing, requests for repetition, or pronunciation problems. These are not WMNs unless the meaning, interpretation, or use of the expression itself also becomes an issue.
+
+Confirm it as a WMN only if a clear Trigger, Indicator, and Negotiation can all be identified and a genuine meta-linguistic shift is present. Otherwise, move on.
+For each confirmed WMN, classify the Indicator as NON, DIN, or Other.
+Only include genuine WMNs in your results — a word or phrase merely being mentioned, or a topic being discussed at length, is not enough on its own."""
+
 REGEX_FORMAT_HELP = (
     'Enter a JSON array of pattern objects. Each object must have:\n'
     '  "label"   — "Indicator", "Trigger", or "Negotiation"\n'
