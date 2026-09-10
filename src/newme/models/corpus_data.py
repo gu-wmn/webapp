@@ -26,6 +26,9 @@ class Dialogue(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     corpus_id = db.Column(db.Integer, db.ForeignKey("corpora.id"), nullable=False, index=True)
     external_id = db.Column(db.String(255), nullable=False)
+    # Where the dialogue can be read in its original place, e.g. the forum
+    # thread it was taken from. Not every corpus has one.
+    url = db.Column(db.String(1024))
 
     utterances = db.relationship(
         "Utterance",

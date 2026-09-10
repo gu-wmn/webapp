@@ -41,6 +41,9 @@ class AnnotationLabel(db.Model):
     end_offset = db.Column(db.Integer)
     excerpt = db.Column(db.Text, nullable=False)
     excerpt_hash = db.Column(db.String(32), nullable=False, index=True)
+    # The type chosen for the span where the annotation scheme has one, e.g.
+    # MLCR or explification on a Swedish forums indicator or negotiation.
+    type = db.Column(db.String(64))
 
     __table_args__ = (
         db.UniqueConstraint("annotation_id", "position", name="uq_annotation_label_position"),

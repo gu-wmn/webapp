@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from flask import current_app
+from sqlalchemy import inspect
 
 from .extensions import db
 from .models import (
@@ -31,9 +32,19 @@ def perform_installation(
     if install_annotations is None:
         install_annotations = bool(current_app.config.get("INSTALL_ANNOTATIONS_ON_SETUP", True))
 
+    # create_all() builds the current schema in one go, so a database that was
+    # empty before it ran is already at the newest revision. Mark it as such,
+    # or a later "flask db upgrade" would try to add columns it just created.
+    was_empty = not inspect(db.engine).has_table(Dialogue.__tablename__)
     db.create_all()
 
     emit = logger or (lambda message: current_app.logger.info(message))
+
+    if was_empty:
+        from flask_migrate import stamp
+
+        stamp()
+        emit("Stamped the new database at the latest migration.")
     result: dict[str, Any] = {"corpora": None, "annotations": None, "warnings": []}
 
     def record_warning(message: str) -> None:

@@ -21,6 +21,10 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
     DATA_PATH = os.getenv("NEWME_DATA_PATH") or os.getenv("DATA_PATH")
     ANNOTATIONS_PATH = os.getenv("NEWME_ANNOTATIONS_PATH") or os.getenv("ANNOTATIONS_PATH")
+    # Where the Alembic migration scripts live. Relative to the working
+    # directory, so running flask from the project root finds them; the
+    # container gets an absolute path through NEWME_MIGRATIONS_PATH.
+    MIGRATIONS_PATH = os.getenv("NEWME_MIGRATIONS_PATH", "migrations")
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     REQUIRE_SETUP = True

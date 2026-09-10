@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from ..extensions import db
 from ..models.annotation_data import AnnotationLabel, AnnotationSequence
@@ -28,9 +28,14 @@ class AnnotationImporter:
         if not isinstance(payload, list):
             raise ValueError("Annotations file must contain a JSON list.")
 
-        db.session.execute(delete(AnnotationLabel))
-        db.session.execute(delete(AnnotationSequence))
-        db.session.flush()
+        # Only the corpora this file covers are replaced, so importing one set
+        # of annotations leaves any other set in the database alone.
+        codenames = {
+            str(item.get("corpus_codename"))
+            for item in payload
+            if isinstance(item, dict) and item.get("corpus_codename")
+        }
+        self._delete_existing(codenames)
 
         label_count = 0
         sequence_count = 0
@@ -71,6 +76,7 @@ class AnnotationImporter:
                         end_offset=self._parse_int(label.get("end_offset")),
                         excerpt=excerpt,
                         excerpt_hash=excerpt_hash,
+                        type=label.get("type"),
                     )
                 )
                 label_count += 1
@@ -81,7 +87,23 @@ class AnnotationImporter:
             "annotations_path": str(self._path),
             "sequence_count": sequence_count,
             "label_count": label_count,
+            "corpora": sorted(codenames),
         }
+
+    def _delete_existing(self, codenames: set[str]) -> None:
+        if not codenames:
+            return
+
+        sequence_ids = select(AnnotationSequence.id).where(
+            AnnotationSequence.corpus_codename.in_(codenames)
+        )
+        db.session.execute(
+            delete(AnnotationLabel).where(AnnotationLabel.annotation_id.in_(sequence_ids))
+        )
+        db.session.execute(
+            delete(AnnotationSequence).where(AnnotationSequence.corpus_codename.in_(codenames))
+        )
+        db.session.flush()
 
     @staticmethod
     def _parse_int(value: Any) -> int | None:

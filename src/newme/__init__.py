@@ -9,7 +9,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import Config
-from .extensions import db
+from .extensions import db, migrate
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -30,6 +30,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     _configure_data_path_and_db(app)
 
     db.init_app(app)
+    # The package is installed into site-packages, so the migration scripts are
+    # found through MIGRATIONS_PATH rather than relative to the package.
+    migrate.init_app(app, db, directory=app.config["MIGRATIONS_PATH"])
 
     from .main import bp as main_bp
     from .setup import bp as setup_bp
@@ -79,6 +82,39 @@ def create_app(test_config: dict | None = None) -> Flask:
         for warning in result.get("warnings", []):
             click.echo(f"Warning: {warning}")
         click.echo("Installation complete.")
+
+    @app.cli.command("import-dialogues")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    def import_dialogues_command(path: str) -> None:
+        """Import dialogues from a corpora JSON file.
+
+        Replaces only the corpora named in the file; anything else in the
+        database is left as it is.
+        """
+        from .corpora.importer import DialogueImporter
+
+        db.create_all()
+        result = DialogueImporter(dialogues_path=path, logger=click.echo).import_dialogues()
+        click.echo(
+            f"Dialogues stored: {result['dialogue_counts']} "
+            f"({result['utterance_count']} utterances)"
+        )
+
+    @app.cli.command("import-annotations")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    def import_annotations_command(path: str) -> None:
+        """Import annotations from a wmn_annotations style JSON file.
+
+        Replaces only the annotations of the corpora named in the file.
+        """
+        from .annotations import AnnotationImporter
+
+        db.create_all()
+        result = AnnotationImporter(annotations_path=path, logger=click.echo).import_annotations()
+        click.echo(
+            f"Annotations stored: {result['sequence_count']} sequences, "
+            f"{result['label_count']} labels for {', '.join(result['corpora'])}"
+        )
 
     return app
 
@@ -190,6 +226,7 @@ def _load_environment_from_file() -> None:
 def _update_config_from_runtime_env(app: Flask) -> None:
     _set_config_if_present(app, "ENV_FILE", os.getenv("NEWME_ENV_FILE"))
     _set_config_if_present(app, "SECRET_KEY", os.getenv("SECRET_KEY"))
+    _set_config_if_present(app, "MIGRATIONS_PATH", os.getenv("NEWME_MIGRATIONS_PATH"))
     _set_config_if_present(
         app,
         "ANNOTATIONS_PATH",
