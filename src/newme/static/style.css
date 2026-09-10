@@ -674,61 +674,19 @@ a.diag-id:focus-visible {
   margin: 0.18rem 0;
 }
 
-.truncation-controls {
+/* Marks where the dialogue was cut. The excerpt is fixed server-side, so this
+   is an indicator only - there is nothing to expand. */
+.dialogue-clip {
+  border-top: 3px solid #194468;
   margin: 0.45rem 0 0.3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.22rem;
-  color: #194468;
 }
 
-.truncation-controls[hidden] {
-  display: none;
-}
-
-.truncation-controls-top {
+.dialogue-clip-top {
   margin-top: 0;
 }
 
-.truncation-controls-bottom {
+.dialogue-clip-bottom {
   margin-bottom: 0;
-}
-
-.truncation-toggle {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  border-radius: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.25;
-  text-align: left;
-}
-
-.truncation-toggle::before {
-  content: "\271A";
-  display: inline-block;
-  margin-right: 0.38rem;
-  font-size: 1.12em;
-  line-height: 1;
-}
-
-.truncation-toggle:focus-visible {
-  outline: 2px solid #194468;
-  outline-offset: 2px;
-}
-
-.truncation-divider {
-  border-top: 3px solid currentColor;
-}
-
-.truncation-controls-bottom .truncation-divider {
-  order: 0;
-}
-
-.truncation-controls-bottom .truncation-toggle {
-  order: 1;
 }
 
 .truncation-preview {

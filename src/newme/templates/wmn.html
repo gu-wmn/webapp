@@ -51,12 +51,7 @@
     <section class="panel">
       <h2 class="wmn-view-heading">Dialogue: <a class="diag-id" href="{{ url_for('main.dialogue_page', dialogue_id=sequence.dialogue_external_id) | with_filters }}">{{ sequence.dialogue_external_id }}</a></h2>
 
-      <div
-        data-dialogue-window
-        data-is-truncated="{{ 'true' if truncation.is_truncated else 'false' }}"
-        data-first-label-index="{{ truncation.first_label_index if truncation.first_label_index is not none else -1 }}"
-        data-last-label-index="{{ truncation.last_label_index if truncation.last_label_index is not none else -1 }}"
-      >
+      <div class="dialogue-window">
         {% if dialogue_missing %}
           <div class="warning-callout" role="alert" aria-live="polite">
             <p><strong>Warning: Dialogue unavailable</strong></p>
@@ -66,195 +61,34 @@
               Annotation labels are still shown in the left panel.
             </p>
           </div>
-        {% endif %}
-
-        {% if truncation.omitted_before > 0 %}
-          <div class="truncation-controls truncation-controls-top" data-truncation-control="start" hidden>
-            <button type="button" class="truncation-toggle" aria-label="Show earlier context">
-              Show earlier context
-            </button>
-            <div class="truncation-divider" aria-hidden="true"></div>
+        {% elif not window.anchored %}
+          <div class="warning-callout" role="alert" aria-live="polite">
+            <p><strong>Warning: Excerpt unavailable</strong></p>
+            <p>
+              None of this sequence's labels resolve to a position in the dialogue,
+              so no excerpt can be shown.
+              Annotation labels are still listed in the left panel.
+            </p>
           </div>
         {% endif %}
 
+        {% if window.clipped_before %}
+          <div class="dialogue-clip dialogue-clip-top" aria-hidden="true"></div>
+        {% endif %}
+
         {% for utterance in utterances %}
-          <article class="utterance" data-utterance-index="{{ loop.index0 }}">
+          <article class="{{ ('utterance ' ~ utterance.preview_class) | trim }}">
             <p><b>[{{ utterance.author }}]</b></p>
             <p>{{ utterance.text | safe }}</p>
           </article>
         {% endfor %}
 
-        {% if truncation.omitted_after > 0 %}
-          <div class="truncation-controls truncation-controls-bottom" data-truncation-control="end" hidden>
-            <button type="button" class="truncation-toggle" aria-label="Show later context">
-              Show later context
-            </button>
-            <div class="truncation-divider" aria-hidden="true"></div>
-          </div>
+        {% if window.clipped_after %}
+          <div class="dialogue-clip dialogue-clip-bottom" aria-hidden="true"></div>
         {% endif %}
       </div>
     </section>
   </div>
 </div>
 
-<script>
-(() => {
-  const container = document.querySelector("[data-dialogue-window]");
-  if (!container || container.dataset.isTruncated !== "true") {
-    return;
-  }
-
-  const firstLabelIndex = Number.parseInt(container.dataset.firstLabelIndex ?? "-1", 10);
-  const lastLabelIndex = Number.parseInt(container.dataset.lastLabelIndex ?? "-1", 10);
-  if (Number.isNaN(firstLabelIndex) || Number.isNaN(lastLabelIndex) || firstLabelIndex < 0 || lastLabelIndex < firstLabelIndex) {
-    return;
-  }
-
-  const utterances = Array.from(container.querySelectorAll("[data-utterance-index]"));
-  const utteranceByIndex = new Map(
-    utterances.map((item) => [Number.parseInt(item.dataset.utteranceIndex ?? "-1", 10), item])
-  );
-  const leadingUtterances = utterances.filter((item) => {
-    const index = Number.parseInt(item.dataset.utteranceIndex ?? "-1", 10);
-    return !Number.isNaN(index) && index < firstLabelIndex;
-  });
-  const trailingUtterances = utterances.filter((item) => {
-    const index = Number.parseInt(item.dataset.utteranceIndex ?? "-1", 10);
-    return !Number.isNaN(index) && index > lastLabelIndex;
-  });
-
-  const leadingControl = container.querySelector("[data-truncation-control='start']");
-  const trailingControl = container.querySelector("[data-truncation-control='end']");
-  const leadingButton = leadingControl ? leadingControl.querySelector(".truncation-toggle") : null;
-  const trailingButton = trailingControl ? trailingControl.querySelector(".truncation-toggle") : null;
-
-  const setVisibility = (items, visible) => {
-    for (const item of items) {
-      item.hidden = !visible;
-    }
-  };
-
-  const clearPreviewStyle = (item) => {
-    if (!item) {
-      return;
-    }
-    item.classList.remove(
-      "truncation-preview",
-      "truncation-preview-start",
-      "truncation-preview-end",
-      "truncation-preview-near",
-      "truncation-preview-far"
-    );
-  };
-
-  const applyPreviewStyle = (item, classNames) => {
-    if (!item) {
-      return;
-    }
-    item.classList.add("truncation-preview", ...classNames);
-  };
-
-  const revealAll = (items) => {
-    for (const item of items) {
-      item.hidden = false;
-      clearPreviewStyle(item);
-    }
-  };
-
-  const collapseToPreview = (items, previewSpecs = []) => {
-    setVisibility(items, false);
-    if (items.length === 0) {
-      return;
-    }
-
-    const seen = new Set();
-    const effectiveSpecs = [];
-
-    for (const spec of previewSpecs) {
-      if (!spec || !spec.item || seen.has(spec.item)) {
-        continue;
-      }
-      seen.add(spec.item);
-      effectiveSpecs.push(spec);
-    }
-
-    if (effectiveSpecs.length === 0) {
-      effectiveSpecs.push({
-        item: items[items.length - 1],
-        classNames: ["truncation-preview-near"],
-      });
-    }
-
-    for (const spec of effectiveSpecs) {
-      spec.item.hidden = false;
-      applyPreviewStyle(spec.item, spec.classNames || []);
-    }
-  };
-
-  const initToggle = (control, button, items, options) => {
-    if (!control || !button || items.length === 0) {
-      return;
-    }
-
-    let expanded = false;
-    control.hidden = false;
-
-    const render = () => {
-      if (expanded) {
-        revealAll(items);
-        button.textContent = options.hideText;
-      } else {
-        collapseToPreview(items, options.previewSpecs);
-        button.textContent = options.showText;
-      }
-      button.setAttribute("aria-expanded", expanded ? "true" : "false");
-    };
-
-    button.addEventListener("click", () => {
-      expanded = !expanded;
-      render();
-    });
-
-    render();
-  };
-
-  if (leadingControl && leadingButton && leadingUtterances.length > 2) {
-    const leadingNear = utteranceByIndex.get(firstLabelIndex - 1) || leadingUtterances[leadingUtterances.length - 1];
-    const leadingFar = utteranceByIndex.get(firstLabelIndex - 2) || leadingUtterances[leadingUtterances.length - 2];
-    initToggle(leadingControl, leadingButton, leadingUtterances, {
-      showText: "Show earlier context",
-      hideText: "Hide earlier context",
-      previewSpecs: [
-        {
-          item: leadingFar,
-          classNames: ["truncation-preview-start", "truncation-preview-far"],
-        },
-        {
-          item: leadingNear,
-          classNames: ["truncation-preview-start", "truncation-preview-near"],
-        },
-      ],
-    });
-  }
-
-  if (trailingControl && trailingButton && trailingUtterances.length > 2) {
-    const trailingNear = utteranceByIndex.get(lastLabelIndex + 1) || trailingUtterances[0];
-    const trailingFar = utteranceByIndex.get(lastLabelIndex + 2) || trailingUtterances[1];
-    initToggle(trailingControl, trailingButton, trailingUtterances, {
-      showText: "Show later context",
-      hideText: "Hide later context",
-      previewSpecs: [
-        {
-          item: trailingNear,
-          classNames: ["truncation-preview-end", "truncation-preview-near"],
-        },
-        {
-          item: trailingFar,
-          classNames: ["truncation-preview-end", "truncation-preview-far"],
-        },
-      ],
-    });
-  }
-})();
-</script>
 {% endblock %}

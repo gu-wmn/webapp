@@ -42,6 +42,11 @@ LABEL_OPTIONS = [
 LABEL_VALUE_BY_NAME = {name: value for name, value in LABEL_OPTIONS}
 VALID_LABELS = set(LABEL_VALUE_BY_NAME.values())
 
+# Utterances of surrounding context served alongside the labelled span on a WMN
+# page. Everything outside that window is dropped server-side, so a whole
+# dialogue is never available from a sequence view.
+DIALOGUE_CONTEXT_UTTERANCES = 2
+
 CONTEXT_OPTIONS = [
     ("SPOKEN", "Spoken interaction"),
     ("ONLINE", "Online interaction"),
@@ -308,10 +313,11 @@ def sequence_page(dialogue_id: str, wmn_id: str):
         if _is_matching_label(label, sequence, filters)
     ]
 
-    truncation = _label_truncation_bounds(labels, len(utterances))
+    label_span = _label_span_bounds(labels, len(utterances))
 
     annotated_utterances, label_links = _annotate_utterances(utterances, labels)
-    if dialogue_missing and labels:
+    window = _dialogue_window(annotated_utterances, label_span)
+    if (dialogue_missing or not window["anchored"]) and labels:
         label_links = [
             {
                 "name": label["name"],
@@ -327,9 +333,9 @@ def sequence_page(dialogue_id: str, wmn_id: str):
         sequence=sequence,
         corpus=corpus,
         sibling_wmn_ids=sibling_wmn_ids,
-        utterances=annotated_utterances,
+        utterances=window["utterances"],
         label_links=label_links,
-        truncation=truncation,
+        window=window,
         dialogue_missing=dialogue_missing,
         filters_active=_filters_are_active(filters),
     )
@@ -1038,9 +1044,10 @@ def _annotate_utterances(
     return utterances, label_links
 
 
-def _label_truncation_bounds(
+def _label_span_bounds(
     labels: list[dict], utterance_count: int
-) -> dict[str, int | bool | None]:
+) -> dict[str, int | None]:
+    """First and last utterance touched by any label, or None if none resolve."""
     first_label_index: int | None = None
     last_label_index: int | None = None
 
@@ -1062,25 +1069,64 @@ def _label_truncation_bounds(
         if last_label_index is None or current_last > last_label_index:
             last_label_index = current_last
 
-    if first_label_index is None or last_label_index is None:
-        return {
-            "first_label_index": None,
-            "last_label_index": None,
-            "omitted_before": 0,
-            "omitted_after": 0,
-            "is_truncated": False,
-        }
-
-    omitted_before = first_label_index
-    omitted_after = max(0, utterance_count - last_label_index - 1)
-
     return {
         "first_label_index": first_label_index,
         "last_label_index": last_label_index,
-        "omitted_before": omitted_before,
-        "omitted_after": omitted_after,
-        "is_truncated": omitted_before > 0 or omitted_after > 0,
     }
+
+
+def _dialogue_window(
+    utterances: list[dict[str, str]], label_span: dict[str, int | None]
+) -> dict:
+    """Cut a dialogue down to the excerpt a WMN page may show.
+
+    The window is the labelled span plus DIALOGUE_CONTEXT_UTTERANCES either
+    side. Utterances outside it are dropped here rather than hidden in the
+    browser, so the rest of the dialogue never reaches the page source. A
+    sequence whose labels resolve to no utterance position gets no excerpt at
+    all, since there is nothing to anchor a window to.
+    """
+    first_label_index = _safe_int(label_span.get("first_label_index"))
+    last_label_index = _safe_int(label_span.get("last_label_index"))
+    if first_label_index is None or last_label_index is None or not utterances:
+        return {
+            "utterances": [],
+            "anchored": False,
+            "clipped_before": False,
+            "clipped_after": False,
+        }
+
+    start = max(0, first_label_index - DIALOGUE_CONTEXT_UTTERANCES)
+    end = min(len(utterances) - 1, last_label_index + DIALOGUE_CONTEXT_UTTERANCES)
+
+    window = []
+    for index in range(start, end + 1):
+        utterance = dict(utterances[index])
+        utterance["preview_class"] = _preview_class(
+            index, first_label_index, last_label_index
+        )
+        window.append(utterance)
+
+    return {
+        "utterances": window,
+        "anchored": True,
+        "clipped_before": start > 0,
+        "clipped_after": end < len(utterances) - 1,
+    }
+
+
+def _preview_class(index: int, first_label_index: int, last_label_index: int) -> str:
+    """Fade class for a context utterance; empty for the labelled span itself."""
+    if first_label_index <= index <= last_label_index:
+        return ""
+    if index < first_label_index:
+        edge = "truncation-preview-start"
+        distance = first_label_index - index
+    else:
+        edge = "truncation-preview-end"
+        distance = index - last_label_index
+    depth = "truncation-preview-near" if distance <= 1 else "truncation-preview-far"
+    return f"truncation-preview {edge} {depth}"
 
 
 def _safe_int(value) -> int | None:
