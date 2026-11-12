@@ -964,83 +964,50 @@ def _sorted_labels(labels: list[AnnotationLabel]) -> list[AnnotationLabel]:
 def _annotate_utterances(
     utterances: list[dict[str, str]], labels: list[dict]
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    # Build segments from the original text, then escape each segment before
+    # adding markup. Reopening spans at boundaries handles crossing intervals.
+    intervals: dict[int, list[tuple[int, int, str, int]]] = {}
     label_links: list[dict[str, str]] = []
-    inserts: list[tuple[int, int, int]] = []
-
-    label_id = 0
-
     for label in labels:
-        start_index = _safe_int(label.get("start_index"))
-        end_index = _safe_int(label.get("end_index"))
-        start_offset_raw = _safe_int(label.get("start_offset"))
-        end_offset_raw = _safe_int(label.get("end_offset"))
+        start = _safe_int(label.get("start_index"))
+        end = _safe_int(label.get("end_index"))
+        start_offset = _safe_int(label.get("start_offset"))
+        end_offset = _safe_int(label.get("end_offset"))
         name = label.get("name")
-
-        if (
-            start_index is None
-            or end_index is None
-            or start_offset_raw is None
-            or end_offset_raw is None
-            or name not in VALID_LABELS
-        ):
+        if (start is None or end is None or start_offset is None or end_offset is None
+                or name not in VALID_LABELS or not (0 <= start <= end < len(utterances))):
             continue
-        if start_index < 0 or end_index < 0:
+        if not (0 <= start_offset <= len(utterances[start]["text"])
+                and 0 <= end_offset <= len(utterances[end]["text"])):
             continue
-        if start_index >= len(utterances) or end_index >= len(utterances):
+        if start == end and start_offset >= end_offset:
             continue
 
-        start_span = f'<span class="{name}" id="label-{label_id}">'
-        end_span = "</span>"
+        label_id = len(label_links)
+        label_links.append({"name": name, "excerpt": label.get("excerpt", ""),
+                            "link": f"label-{label_id}"})
+        for index in range(start, end + 1):
+            text = utterances[index]["text"]
+            left = start_offset if index == start else 0
+            right = end_offset if index == end else len(text)
+            if left < right:
+                intervals.setdefault(index, []).append((left, right, name, label_id))
 
-        add_to_start = 0
-        for insert in inserts:
-            if insert[0] == start_index and insert[1] < start_offset_raw:
-                add_to_start += insert[2]
-        start_offset = start_offset_raw + add_to_start
-
-        utterances[start_index]["text"] = (
-            utterances[start_index]["text"][:start_offset]
-            + start_span
-            + utterances[start_index]["text"][start_offset:]
-        )
-        inserts.append((start_index, start_offset_raw, len(start_span)))
-
-        label_links.append(
-            {
-                "name": name,
-                "excerpt": label.get("excerpt", ""),
-                "link": f"label-{label_id}",
-            }
-        )
-        label_id += 1
-
-        if start_index < end_index:
-            utterances[start_index]["text"] += end_span
-
-        if end_index - start_index == 1:
-            utterances[start_index + 1]["text"] = start_span + utterances[start_index + 1]["text"]
-            inserts.append((start_index + 1, 0, len(start_span)))
-        elif end_index - start_index > 1:
-            for idx in range(start_index + 1, end_index):
-                utterances[idx]["text"] = start_span + utterances[idx]["text"] + end_span
-                inserts.append((idx, 0, len(start_span)))
-                inserts.append((idx, len(utterances[idx]["text"]), len(end_span)))
-            utterances[end_index]["text"] = start_span + utterances[end_index]["text"]
-            inserts.append((end_index, 0, len(start_span)))
-
-        add_to_end = 0
-        for insert in inserts:
-            if insert[0] == end_index and insert[1] < end_offset_raw:
-                add_to_end += insert[2]
-        end_offset = end_offset_raw + add_to_end
-
-        utterances[end_index]["text"] = (
-            utterances[end_index]["text"][:end_offset]
-            + end_span
-            + utterances[end_index]["text"][end_offset:]
-        )
-        inserts.append((end_index, end_offset_raw, len(end_span)))
-
+    emitted_ids: set[int] = set()
+    for index, utterance in enumerate(utterances):
+        raw = utterance["text"]
+        spans = intervals.get(index, [])
+        boundaries = sorted({0, len(raw), *(x for span in spans for x in span[:2])})
+        chunks = []
+        for left, right in zip(boundaries, boundaries[1:]):
+            active = [span for span in spans if span[0] <= left and span[1] >= right]
+            for _, _, name, label_id in active:
+                anchor = f' id="label-{label_id}"' if label_id not in emitted_ids else ""
+                emitted_ids.add(label_id)
+                chunks.append(f'<span class="{name}"{anchor}>')
+            chunks.append(str(escape(raw[left:right])))
+            chunks.extend("</span>" for _ in active)
+        utterance["text"] = "".join(chunks)
     return utterances, label_links
 
 
