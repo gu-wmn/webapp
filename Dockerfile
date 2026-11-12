@@ -7,6 +7,7 @@ COPY ./src ./src
 COPY ./MANIFEST.in .
 COPY ./setup.py .
 COPY ./requirements.txt .
+COPY ./migrations /opt/newme/migrations
 
 RUN pip install --upgrade setuptools
 RUN pip install -r requirements.txt
@@ -16,5 +17,5 @@ RUN pip install .
 RUN rm -rf ./*
 
 # Start the server
-ENV USE_PROXY_FIX=true
+ENV NEWME_MIGRATIONS_PATH=/opt/newme/migrations
 CMD ["gunicorn", "--bind=0.0.0.0:8000", "newme.wsgi:app"]

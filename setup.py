@@ -17,6 +17,7 @@ setup(
     install_requires=[
         'flask',
         'flask-sqlalchemy',
+        'flask-migrate',
         'gunicorn',
         'requests'
     ],
